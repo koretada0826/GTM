@@ -1,8 +1,16 @@
-import Link from "next/link";
+/**
+ * AppShell（アプリ全体の共通の枠）
+ * この部品は、ログイン後のアプリ画面の「外枠」を作ります。左端に画面切り替え用の縦メニュー、
+ * 上部にワークスペース名やクレジット残高を表示するヘッダーを置き、
+ * その中央（children）に各ページの中身をはめ込みます。すべての画面で共通のガワです。
+ */
+
+import Link from "next/link"; // ページ間を移動するためのリンク部品（Next.js）
 import { Logo } from "./Logo";
-import { logoutAction } from "@/app/actions/auth";
+import { logoutAction } from "@/app/actions/auth"; // ログアウト処理（サーバー側で実行される）
 import type { Workspace } from "@/lib/domain/types";
 
+// 左端の縦メニュー（レール）の項目一覧。href=リンク先 / label=名前 / icon=アイコンの図形データ
 const RAIL = [
   { href: "", label: "検索", icon: "M11 4a7 7 0 1 0 4.2 12.6l4.1 4.1 1.4-1.4-4.1-4.1A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" },
   { href: "/leads", label: "リスト", icon: "M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h10v2H4v-2Z" },
@@ -10,6 +18,7 @@ const RAIL = [
   { href: "/billing", label: "課金", icon: "M3 6h18v12H3V6Zm2 2v2h14V8H5Zm0 4v4h14v-4H5Z" },
 ];
 
+// workspace=対象のワークスペース情報 / balance=クレジット残高 / active=今開いているメニュー / children=中央に表示する各ページの中身
 export function AppShell({
   workspace,
   balance,
@@ -21,10 +30,10 @@ export function AppShell({
   active?: string;
   children: React.ReactNode;
 }) {
-  const base = `/app/w/${workspace.id}`;
+  const base = `/app/w/${workspace.id}`; // 各リンクの共通の先頭部分（このワークスペース用のURL）
   return (
     <div className="flex h-screen overflow-hidden bg-cream">
-      {/* left rail */}
+      {/* left rail（左端の縦メニュー） */}
       <aside className="flex w-14 flex-col items-center gap-1 border-r border-line bg-cream-100/60 py-3">
         <div className="mb-2">
           <Link href="/app" className="inline-flex h-8 w-8 items-center justify-center">
@@ -36,7 +45,9 @@ export function AppShell({
             </svg>
           </Link>
         </div>
+        {/* メニュー項目を1つずつボタンとして並べる */}
         {RAIL.map((r) => {
+          // この項目が今開いている画面かどうか（href が空なら「検索」画面とみなす）
           const isActive = active === (r.href || "search");
           return (
             <Link
@@ -53,6 +64,7 @@ export function AppShell({
             </Link>
           );
         })}
+        {/* 一番下に配置するログアウトボタン。押すと logoutAction が実行される */}
         <form action={logoutAction} className="mt-auto">
           <button
             title="ログアウト"
@@ -65,8 +77,9 @@ export function AppShell({
         </form>
       </aside>
 
-      {/* main */}
+      {/* main（メニューの右側。上部ヘッダーとページ本体） */}
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* 上部ヘッダー: 左にロゴとワークスペース名、右にクレジット残高を表示 */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-cream/80 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
             <Logo href="/app" />
@@ -77,6 +90,7 @@ export function AppShell({
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {/* クレジット残高の表示。クリックすると課金ページへ移動する。toLocaleString() で3桁ごとにカンマ区切り */}
             <Link
               href={base + "/billing"}
               className="flex items-center gap-1.5 rounded-full border border-line-strong bg-paper px-3 py-1.5 text-sm"
@@ -87,6 +101,7 @@ export function AppShell({
             </Link>
           </div>
         </header>
+        {/* ページ本体。ここに各画面の中身（children）がはめ込まれて表示される */}
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>

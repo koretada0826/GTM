@@ -1,12 +1,19 @@
+// この部品は「料金プランの比較カード」を作ります。無料〜有料の各プランを横に並べ、
+// 月額料金・付与クレジット・使える機能の一覧を表にして見せます。
+// カードのボタンを押すと新規登録ページへ進みます（金額の表示は日本円）。
+
 import Link from "next/link";
 import { PLAN_INFO, type Plan } from "@/lib/domain/types";
 import { formatJpy } from "@/lib/config";
 
+// 左から右へカードを並べる順番。
 const PLAN_ORDER: Plan[] = ["free", "starter", "pro", "scale"];
 
+// 各機能欄に入る値の種類：文字・数値・オン/オフ（true/false）のいずれか。
 type Val = string | number | boolean;
 
 // 機能項目のマトリクス（GTM 独自のプラン内容）
+// ※マトリクス = 縦に機能、横にプランを並べた対応表。各プランでその機能が使えるかを表す。
 const FEATURES: { label: string; values: Record<Plan, Val> }[] = [
   { label: "AIモデル", values: { free: "GTM Lite 1.2", starter: "GTM Lite 1.2", pro: "GTM Max 1.2", scale: "GTM Max 1.2", enterprise: "カスタム" } },
   { label: "チームメンバー", values: { free: "1", starter: "無制限", pro: "無制限", scale: "無制限", enterprise: "無制限" } },
@@ -24,6 +31,7 @@ const FEATURES: { label: string; values: Record<Plan, Val> }[] = [
   { label: "優先サポート", values: { free: false, starter: false, pro: true, scale: true, enterprise: true } },
 ];
 
+// 「その機能が使える」ことを示すチェックマーク（レ点）の絵。
 function Check() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 fill-brand">
@@ -32,18 +40,22 @@ function Check() {
   );
 }
 
+// 機能欄1マスの表示を決める部品。true ならチェック、false なら「—」、
+// それ以外は文字や数字をそのまま表示する（数字はカンマ区切りに整える）。
 function ValueCell({ v }: { v: Val }) {
   if (v === true) return <Check />;
   if (v === false) return <span className="text-line-strong">—</span>;
   return <span className="text-ink">{typeof v === "number" ? v.toLocaleString() : v}</span>;
 }
 
+// 料金カードを全プランぶん並べる本体。
 export function PricingCards() {
   return (
     <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* プランごとに1枚のカードを作る */}
       {PLAN_ORDER.map((p) => {
-        const info = PLAN_INFO[p];
-        const highlight = p === "pro";
+        const info = PLAN_INFO[p]; // そのプランの料金やクレジット等の情報。
+        const highlight = p === "pro"; // pro プランだけ目立たせる（おすすめ枠）。
         return (
           <div
             key={p}
@@ -56,6 +68,7 @@ export function PricingCards() {
             >
               {info.label}
             </div>
+            {/* 月額料金。0円なら「¥0」、それ以外は円表示に整形して見せる */}
             <div className="mt-2 text-3xl font-semibold text-ink">
               {info.priceJpy === 0 ? "¥0" : formatJpy(info.priceJpy)}
               <span className="text-sm font-normal text-muted">/月</span>
@@ -75,7 +88,7 @@ export function PricingCards() {
               はじめる
             </Link>
 
-            {/* 機能項目 */}
+            {/* 機能項目：機能名（左）と、そのプランでの対応状況（右）を並べる */}
             <dl className="mt-6 space-y-3 border-t border-line/70 pt-5 text-[13px]">
               {FEATURES.map((f) => (
                 <div key={f.label} className="flex items-start justify-between gap-2">

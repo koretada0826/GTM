@@ -1,7 +1,12 @@
+// この画面は「ログインページ」です。メールアドレスを入力してログインします（デモではパスワード不要）。
+// 見た目の本体は下の AuthShell という共通部品で、ログインと新規登録の両ページで使い回しています。
+// ※このファイルはサーバー側で表示を作る部品。フォーム送信は loginAction（サーバーアクション）が処理します。
+
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { loginAction } from "@/app/actions/auth";
 
+// /login を開いたときに表示される中身。共通部品にログイン用の文言を渡している。
 export default function LoginPage() {
   return (
     <AuthShell
@@ -14,6 +19,9 @@ export default function LoginPage() {
   );
 }
 
+// ログイン画面と新規登録画面で共通に使う見た目の部品。
+// title=大見出し、subtitle=説明文、cta=送信ボタンの文字、
+// alt=もう一方の画面への案内リンク、showName=名前入力欄を出すかどうか。
 export function AuthShell({
   title,
   subtitle,
@@ -36,7 +44,9 @@ export function AuthShell({
         <div className="w-full max-w-sm">
           <h1 className="font-serif-display text-3xl text-ink">{title}</h1>
           <p className="mt-2 text-sm text-ink-soft">{subtitle}</p>
+          {/* 送信するとサーバーの loginAction が呼ばれてログイン処理が走る */}
           <form action={loginAction} className="mt-8 space-y-4">
+            {/* 新規登録のときだけ名前入力欄を表示 */}
             {showName && (
               <div>
                 <label className="mb-1 block text-sm text-ink-soft">お名前</label>
@@ -65,6 +75,7 @@ export function AuthShell({
               {cta}
             </button>
           </form>
+          {/* もう一方の画面（ログイン⇔新規登録）への案内リンク */}
           <p className="mt-6 text-center text-sm text-muted">
             {alt.text}は{" "}
             <Link href={alt.href} className="font-medium text-brand hover:underline">

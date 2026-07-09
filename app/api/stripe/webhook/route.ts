@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe, WEBHOOK_SECRET } from "@/lib/stripe/client";
-import { applyPlanChange, upsertSubscription } from "@/lib/data/store";
+import { setWorkspacePlan, grantMonthlyCredits, upsertSubscription } from "@/lib/data/store";
 import type { Plan } from "@/lib/domain/types";
 
 // Stripe Webhook 受信口。署名検証のため生のボディを使う。
@@ -27,11 +27,13 @@ export async function POST(req: Request) {
 
   switch (event.type) {
     case "checkout.session.completed": {
+      // 契約成立：プランを設定するだけ（クレジット付与はしない）。
+      // 付与は下の invoice.paid で1回だけ行う → 二重計上を防ぐ。
       const s = event.data.object as Stripe.Checkout.Session;
       const workspaceId = s.metadata?.workspaceId || s.client_reference_id || undefined;
       const plan = s.metadata?.plan as Plan | undefined;
       if (workspaceId && plan) {
-        applyPlanChange(workspaceId, plan);
+        setWorkspacePlan(workspaceId, plan);
         upsertSubscription(workspaceId, {
           plan,
           status: "active",
@@ -43,6 +45,7 @@ export async function POST(req: Request) {
     }
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
+      // プラン変更・解約：プランを切り替えるだけ（クレジットは足さない）
       const sub = event.data.object as Stripe.Subscription;
       const workspaceId = sub.metadata?.workspaceId;
       const plan = sub.metadata?.plan as Plan | undefined;
@@ -55,17 +58,20 @@ export async function POST(req: Request) {
             ? (sub as unknown as { current_period_end: number }).current_period_end * 1000
             : undefined,
         });
-        if (canceled) applyPlanChange(workspaceId, "free");
-        else if (plan) applyPlanChange(workspaceId, plan);
+        if (canceled) setWorkspacePlan(workspaceId, "free");
+        else if (plan) setWorkspacePlan(workspaceId, plan);
       }
       break;
     }
     case "invoice.paid": {
-      // 月次の支払い成功 → 当月クレジットを付与（metadata から plan を参照）
+      // 支払い成功 → ここでだけ当月クレジットを付与。
+      // dedupeKey に invoice.id を使い、同じ請求では二度と付与しない（冪等＝二重計上防止）。
       const inv = event.data.object as Stripe.Invoice;
       const workspaceId = inv.metadata?.workspaceId;
       const plan = inv.metadata?.plan as Plan | undefined;
-      if (workspaceId && plan) applyPlanChange(workspaceId, plan);
+      if (workspaceId && plan) {
+        grantMonthlyCredits(workspaceId, plan, `invoice:${inv.id}`);
+      }
       break;
     }
     default:

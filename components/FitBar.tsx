@@ -1,21 +1,31 @@
+// このファイルには小さな表示部品が2つあります。
+// 1つ目 FitBar は「適合度スコア（Fit Score）」を、点数に応じた長さ・色の横棒で表す部品。
+// 2つ目 CompanyAvatar は、会社名の頭文字を色付きの四角に入れた簡易アイコンを作る部品。
+
 // Fit Score の緑バー（origami の緑グラデ棒を再現）
+// score（点数）が高いほど濃い緑、低いほど黄色寄りになるよう色を選ぶ。
 export function FitBar({ score }: { score: number }) {
   const color =
     score >= 88 ? "#7bc47f" : score >= 74 ? "#a7cf7d" : score >= 60 ? "#cfe08a" : "#e6c98a";
   return (
     <div className="flex items-center gap-2">
+      {/* 点数に比例した長さの横棒（最低でも12ピクセルは確保する） */}
       <span
         className="inline-block h-3 rounded-sm"
         style={{ width: `${Math.max(12, score * 0.34)}px`, background: color }}
       />
+      {/* 点数の数字表示 */}
       <span className="tabular-nums text-ink-soft">{score}</span>
     </div>
   );
 }
 
 // 会社名の頭文字アバター（favicon 代替）
+// ※アバター = 名前の代わりに表示する小さな目印アイコン。
 export function CompanyAvatar({ name }: { name: string }) {
+  // 「株式会社」などの言葉を取り除いた上で、先頭の1文字を大文字にして使う。
   const ch = (name.replace(/[株式会社有限合同]/g, "").trim()[0] || name[0] || "?").toUpperCase();
+  // 背景に使う色の候補。会社ごとに違う色になるよう名前から番号を決める。
   const palette = ["#ffd9ec", "#dbe8ff", "#e3f5df", "#fdead0", "#e9e2ff", "#d9f2f0"];
   const idx = name.charCodeAt(0) % palette.length;
   return (

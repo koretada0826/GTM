@@ -1,9 +1,16 @@
 "use client";
 
+// React の機能を読み込みます。
+// useEffect: 画面表示後などに処理を動かす / useRef: 要素や値を保持する箱 / useState: 状態を覚える / useSyncExternalStore: 外部の状態（OS設定など）を購読する
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CompanyAvatar } from "./FitBar";
 
 /**
+ * AnimatedLeadSearchDemo（トップページの動くデモ）
+ * これはトップページに置く「操作している様子を自動再生する見本」です。実際には操作しません。
+ * 左のチャット欄に文字が1文字ずつ打たれ、AIが返信し、右側にリード一覧が上から順に出てくる、
+ * という一連の流れをアニメーションで見せて、プロダクトの雰囲気を伝えます。
+ *
  * トップページのメイン UI モック（左チャット＋右結果テーブル）を、
  * 「AIに指示 → AIが結果を返す → 一覧が生成される」流れが伝わる
  * 動くライブデモとして実装したコンポーネント。
@@ -14,11 +21,12 @@ import { CompanyAvatar } from "./FitBar";
  * - 行/ヘッダ/返信は常に DOM に置き opacity/transform のみ変化 → CLS を出さない
  */
 
-const INPUT_TEXT = "東京の歯科医院で、スタッフを採用中の医院を探して";
+const INPUT_TEXT = "東京の歯科医院で、スタッフを採用中の医院を探して"; // タイピング演出で1文字ずつ打たれる入力例
 const REPLY_SUFFIX =
-  "件の歯科医院を発見しました。採用シグナル・広告出稿で絞り込み済みです。";
-const REPLY_TARGET = 1240;
+  "件の歯科医院を発見しました。採用シグナル・広告出稿で絞り込み済みです。"; // AI返信のうち、数字の後ろに続く固定文
+const REPLY_TARGET = 1240; // カウントアップ演出の最終到達値（発見件数）
 
+// 結果テーブルの1行分のデータの形。name=会社名 / cat=業種 / hc=従業員数 / sig=シグナル(購買の兆し) / score=適合度スコア
 interface Row {
   name: string;
   cat: string;
@@ -27,6 +35,7 @@ interface Row {
   score: number;
 }
 
+// デモ用に表示する、あらかじめ用意した会社の一覧
 const ROWS: Row[] = [
   { name: "株式会社あおば歯科", cat: "歯科・デンタル", hc: 12, sig: "採用強化中（3名）", score: 97 },
   { name: "みらいデンタルクリニック", cat: "歯科・デンタル", hc: 8, sig: "新規開業（今月）", score: 95 },
@@ -38,31 +47,37 @@ const ROWS: Row[] = [
   { name: "翔デンタルケア", cat: "歯科・デンタル", hc: 5, sig: "広告出稿中", score: 81 },
 ];
 
+// 句読点などの記号を判定するための正規表現（パターン）。記号のあとは少し長めに間を取るために使う。
 const PUNCT = /[、。，．,.！？!?]/;
 
 /** 画面内に入ったか（1回だけ true） */
+// この部品（フック）は、対象の要素が画面にスクロールで入ってきたかを検知します。入ったら true にして以後は監視をやめます。
 function useInView<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(false);
+  const ref = useRef<T | null>(null); // 監視したい要素をつなぐための参照
+  const [inView, setInView] = useState(false); // 画面内に入ったかどうか
   useEffect(() => {
     const el = ref.current;
-    if (!el || inView) return;
+    if (!el || inView) return; // 要素が無い、または既に検知済みなら何もしない
+    // IntersectionObserver = 要素が画面に見えているかを監視するブラウザの仕組み
     const ob = new IntersectionObserver(
       (entries) => {
+        // 要素が3割以上見えたら「画面内に入った」と判断し、監視を停止する
         if (entries[0]?.isIntersecting) {
           setInView(true);
           ob.disconnect();
         }
       },
-      { threshold: 0.3 }
+      { threshold: 0.3 } // 3割（0.3）見えたら反応する設定
     );
     ob.observe(el);
+    // クリーンアップ（後始末）: この部品が消えるときに監視をやめてメモリを解放する
     return () => ob.disconnect();
   }, [inView]);
   return { ref, inView };
 }
 
 /** OS/ブラウザの「アニメーションを減らす」設定（effect内setStateを避け useSyncExternalStore で購読） */
+// 利用者が「動きを減らす」設定を有効にしているかを調べる部品。true ならアニメを止めて配慮します。
 function useReducedMotion() {
   return useSyncExternalStore(
     (cb) => {
@@ -76,9 +91,9 @@ function useReducedMotion() {
 }
 
 export function AnimatedLeadSearchDemo() {
-  const { ref, inView } = useInView<HTMLDivElement>();
-  const reduced = useReducedMotion();
-  const enabled = inView && !reduced;
+  const { ref, inView } = useInView<HTMLDivElement>(); // このデモが画面に入ったか
+  const reduced = useReducedMotion(); // 「動きを減らす」設定がオンか
+  const enabled = inView && !reduced; // 画面内に入っていて、かつ動きを減らす設定でなければアニメを動かす
 
   // ---- アニメーションの各段階を表す状態 ----
   const [typed, setTyped] = useState(""); // 左：入力中の文字列
@@ -88,18 +103,21 @@ export function AnimatedLeadSearchDemo() {
   const [visibleRows, setVisibleRows] = useState(0); // 右：表示済み行数
   const [activate, setActivate] = useState(false); // 「+ さらに取得」活性化
 
+  // アニメーション全体の進行を管理する処理。enabled が true のときだけ動き、ずっと繰り返します。
   useEffect(() => {
     // reduced motion / 画面外：アニメーションは動かさない（完成形は描画側で導出）
     if (!enabled) return;
 
-    let cancelled = false;
-    const timers: ReturnType<typeof setTimeout>[] = [];
+    let cancelled = false; // この部品が消えたら true にして、途中の演出を止めるための目印
+    const timers: ReturnType<typeof setTimeout>[] = []; // 使ったタイマーを後で全部止められるよう控えておく
+    // 指定ミリ秒だけ待つための小さな道具。await wait(500) のように「少し待つ」目的で使う。
     const wait = (ms: number) =>
       new Promise<void>((res) => {
         const t = setTimeout(res, ms);
         timers.push(t);
       });
 
+    // 演出の本体。上から順に「入力→返信→ヘッダ→行表示→…」と進み、最後にリセットして繰り返す。
     const run = async () => {
       // Strict Mode の二重起動は cancelled フラグで無効化される
       while (!cancelled) {
@@ -114,25 +132,27 @@ export function AnimatedLeadSearchDemo() {
         if (cancelled) return;
 
         // --- ステップ3：1文字ずつ入力 ---
+        // 文字列を先頭からi文字目まで切り出して表示することを繰り返し、人が入力しているように見せる
         for (let i = 1; i <= INPUT_TEXT.length; i++) {
           if (cancelled) return;
           setTyped(INPUT_TEXT.slice(0, i));
           const ch = INPUT_TEXT[i - 1];
+          // 記号のあとは長め(140ms)、通常文字は短め(約40〜55ms)待って自然なリズムにする
           await wait(PUNCT.test(ch) ? 140 : 40 + Math.random() * 15);
         }
         await wait(950);
         if (cancelled) return;
 
         // --- ステップ4：AI返信＋カウントアップ ---
-        setShowReply(true);
+        setShowReply(true); // AIの返信吹き出しを表示
         await wait(220);
-        const steps = 22;
+        const steps = 22; // 件数を0から目標値まで、22回に分けて少しずつ増やす
         for (let s = 1; s <= steps; s++) {
           if (cancelled) return;
-          setCount(Math.round((REPLY_TARGET / steps) * s));
+          setCount(Math.round((REPLY_TARGET / steps) * s)); // 途中の数字を計算して表示
           await wait(34);
         }
-        setCount(REPLY_TARGET);
+        setCount(REPLY_TARGET); // 最後にちょうど目標値に合わせる
         await wait(320);
         if (cancelled) return;
 
@@ -142,6 +162,7 @@ export function AnimatedLeadSearchDemo() {
         if (cancelled) return;
 
         // --- ステップ6〜8：行を上から順に表示（FITバーはCSSで伸長） ---
+        // 表示する行数を1つずつ増やし、リードが1件ずつ現れていくように見せる
         for (let r = 1; r <= ROWS.length; r++) {
           if (cancelled) return;
           setVisibleRows(r);
@@ -151,7 +172,7 @@ export function AnimatedLeadSearchDemo() {
         if (cancelled) return;
 
         // --- ステップ9：ボタン活性化 ---
-        setActivate(true);
+        setActivate(true); // 「+ さらに取得」ボタンを目立たせる（有効化の見た目に）
 
         // --- 完了後の静止 ---
         await wait(3200);
@@ -174,7 +195,8 @@ export function AnimatedLeadSearchDemo() {
       }
     };
 
-    run();
+    run(); // 演出を開始する
+    // クリーンアップ（後始末）: 部品が消えるとき、演出を止めて全タイマーを解除する
     return () => {
       cancelled = true;
       timers.forEach(clearTimeout);
@@ -182,6 +204,7 @@ export function AnimatedLeadSearchDemo() {
   }, [enabled]);
 
   // アニメーションしない場合（reduced motion / 画面外）は完成形を描画時に導出
+  // 以下の d〜 は「実際に画面へ表示する値」。演出オフのときは最初から完成形を表示する。
   const showStatic = !enabled;
   const dTyped = showStatic ? INPUT_TEXT : typed;
   const dShowReply = showStatic || showReply;
@@ -190,8 +213,10 @@ export function AnimatedLeadSearchDemo() {
   const dVisibleRows = showStatic ? ROWS.length : visibleRows;
   const dActivate = showStatic || activate;
 
+  // 全体をふわっと出すための表示クラス。画面内に入ったか動きを減らす設定なら「表示済み」の見た目にする。
   const revealCls = inView || reduced ? "reveal-init reveal-in" : "reveal-init";
 
+  // ここから実際の見た目（JSX）。ref をつけた外枠が「画面内に入ったか」の監視対象になる。
   return (
     <div ref={ref} className={revealCls}>
       {/* スクリーンリーダー向けの静的説明（1文字更新は読み上げさせない） */}
@@ -298,8 +323,9 @@ export function AnimatedLeadSearchDemo() {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* 全行を最初からDOMに置いておき、shown（表示対象か）で見え方だけ切り替える → レイアウトのガタつきを防ぐ */}
                   {ROWS.map((row, i) => {
-                    const shown = i < dVisibleRows;
+                    const shown = i < dVisibleRows; // この行を今表示すべきかどうか
                     return (
                       <tr
                         key={row.name}

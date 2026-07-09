@@ -1,3 +1,7 @@
+// この画面は「プランと課金」ページです。現在のクレジット残高と契約プラン、
+// 選べるプラン一覧、そしてクレジットの消費・付与の履歴を表示します。
+// ※このファイルはサーバー側で動く部品。表示前に本人確認とデータ取得を行います。
+
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getWorkspace, getWallet, listTransactions } from "@/lib/data/store";
@@ -6,6 +10,7 @@ import { PlanChangeButton, ManageBillingButton } from "@/components/BillingActio
 import { PLAN_INFO } from "@/lib/domain/types";
 import { formatJpy } from "@/lib/config";
 
+// プランを表示する順番。
 const PLAN_ORDER = ["free", "starter", "pro", "scale"] as const;
 
 export default async function BillingPage({
@@ -13,12 +18,13 @@ export default async function BillingPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const { id } = await params; // URL から作業スペースのIDを取り出す。
   const user = await getCurrentUser();
   const ws = getWorkspace(id);
+  // 存在しない・未ログイン・持ち主が違う場合は「見つかりません」を表示。
   if (!ws || !user || ws.ownerId !== user.id) notFound();
-  const wallet = getWallet(ws.id);
-  const tx = listTransactions(ws.id).slice(0, 20);
+  const wallet = getWallet(ws.id); // クレジット残高の情報。
+  const tx = listTransactions(ws.id).slice(0, 20); // 直近20件の取引履歴。
 
   return (
     <AppShell workspace={ws} balance={wallet?.balance ?? 0} active="/billing">
@@ -26,7 +32,7 @@ export default async function BillingPage({
         <div className="mx-auto max-w-4xl">
           <h1 className="font-serif-display text-3xl text-ink">プランと課金</h1>
 
-          {/* balance */}
+          {/* balance：現在のクレジット残高・契約プランと、支払い方法の管理ボタン */}
           <div className="mt-6 flex items-center gap-6 rounded-2xl border border-line bg-paper p-6">
             <div>
               <div className="text-sm text-muted">現在のクレジット残高</div>
@@ -44,12 +50,12 @@ export default async function BillingPage({
             </div>
           </div>
 
-          {/* plans */}
+          {/* plans：選べるプランの一覧。それぞれ料金と変更ボタンを表示 */}
           <h2 className="mt-10 font-serif-display text-xl text-ink">プランを選ぶ</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-4">
             {PLAN_ORDER.map((p) => {
-              const info = PLAN_INFO[p];
-              const current = ws.plan === p;
+              const info = PLAN_INFO[p]; // そのプランの情報。
+              const current = ws.plan === p; // 今契約中のプランかどうか。
               return (
                 <div
                   key={p}
@@ -79,7 +85,7 @@ export default async function BillingPage({
             ※ 決済（Stripe）は最終フェーズで有効化されます。現在はデモ用の残高で動作しています。
           </p>
 
-          {/* history */}
+          {/* history：クレジットの消費（マイナス）と付与（プラス）の履歴一覧 */}
           <h2 className="mt-10 font-serif-display text-xl text-ink">消費・付与履歴</h2>
           <div className="mt-4 overflow-hidden rounded-2xl border border-line bg-paper">
             <table className="w-full text-left text-sm">
@@ -91,6 +97,7 @@ export default async function BillingPage({
                 </tr>
               </thead>
               <tbody>
+                {/* 取引履歴を1件ずつ行にして表示（増えたときは緑＋、減ったときは通常色） */}
                 {tx.map((t) => (
                   <tr key={t.id} className="border-t border-line/70">
                     <td className="px-4 py-2 text-muted">

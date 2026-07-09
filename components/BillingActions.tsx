@@ -1,3 +1,7 @@
+// このファイルには、料金・請求まわりの操作ボタンが2つあります。
+// 1つ目 PlanChangeButton はプランを変更するボタン、2つ目 ManageBillingButton は支払い方法を管理するボタン。
+// どちらもボタンを押すとサーバーに依頼し、必要なら決済サービス（Stripe）の画面へ移動します。
+// ※「"use client"」= ブラウザ側で動く部品（クリックに反応するため）。
 "use client";
 
 import { useState } from "react";
@@ -5,6 +9,7 @@ import { useRouter } from "next/navigation";
 import type { Plan } from "@/lib/domain/types";
 
 // プラン変更ボタン（Stripe Checkout へ。鍵未設定時はモックで即時反映）
+// ※Stripe = 決済（お金の支払い）を扱う外部サービス。※モック = 本番の代わりの仮の動き。
 export function PlanChangeButton({
   workspaceId,
   plan,
@@ -16,13 +21,15 @@ export function PlanChangeButton({
   current: boolean;
   highlight?: boolean;
 }) {
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [loading, setLoading] = useState(false); // 処理中かどうか（二重押し防止）。
+  const router = useRouter(); // 画面の再表示などに使う。
 
+  // ボタンが押されたときの処理。
   const onClick = async () => {
-    if (current || loading) return;
+    if (current || loading) return; // 今のプラン、または処理中なら何もしない。
     setLoading(true);
     try {
+      // サーバーに「このプランに変えたい」と伝える。
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -30,13 +37,14 @@ export function PlanChangeButton({
       });
       const data = await res.json();
       if (data.mode === "stripe" && data.url) {
-        window.location.href = data.url; // Stripe Checkout へ遷移
+        window.location.href = data.url; // Stripe Checkout へ遷移（支払いページへ移動）
       } else {
         // モック：プラン適用済み。画面を更新
+        // （決済が未設定の環境では、その場でプランが切り替わるので画面を再読み込みする）
         router.refresh();
       }
     } finally {
-      setLoading(false);
+      setLoading(false); // 成功・失敗どちらでも最後に処理中を解除。
     }
   };
 
@@ -58,17 +66,21 @@ export function PlanChangeButton({
 }
 
 // 支払い方法・請求管理（Stripe Billing Portal へ）
+// ※Billing Portal = クレジットカード変更や請求履歴を確認できる Stripe の管理画面。
 export function ManageBillingButton({ workspaceId }: { workspaceId: string }) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // 処理中かどうか。
+  // ボタンが押されたときの処理。
   const onClick = async () => {
     setLoading(true);
     try {
+      // サーバーに、請求管理画面のリンクを作ってもらうよう頼む。
       const res = await fetch("/api/stripe/portal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
       const data = await res.json();
+      // リンクがあればその管理画面へ移動。無ければデモ中である旨を知らせる。
       if (data.mode === "stripe" && data.url) window.location.href = data.url;
       else alert("決済（Stripe）は最終フェーズで有効化されます。現在はデモ用の残高で動作しています。");
     } finally {

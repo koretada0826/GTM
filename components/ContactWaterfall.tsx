@@ -1,6 +1,12 @@
+// この部品は、連絡先データ（メール・電話番号）を何段階もかけて検証する仕組みを紹介するセクションです。
+// メール用と電話用の2枚のカードを並べ、検証に使う複数サービス（プロバイダ）を順番に見せます。
+// ※ウォーターフォール = 上から順番に試し、最初にうまくいった結果を採用する多段方式のこと。
+
 // 連絡先データの多段ウォーターフォール検証セクション。
 // GTM 独自のプロバイダ表記で、メール／電話の検証プロバイダ列を見せる（設計書08）。
 
+// 1枚のカードに表示する内容の「型（決まった形）」。kind=種類、title=見出し、total=総プロバイダ数、
+// providers=表示するサービス名、note=補足文、tag=保証ラベル。
 interface Waterfall {
   kind: "email" | "phone";
   title: string;
@@ -10,6 +16,7 @@ interface Waterfall {
   tag: string;
 }
 
+// メール検証カードに表示する具体的な中身。
 const EMAIL: Waterfall = {
   kind: "email",
   title: "メール検証ウォーターフォール",
@@ -19,6 +26,7 @@ const EMAIL: Waterfall = {
   tag: "バウンスゼロ検証済み",
 };
 
+// 電話番号検証カードに表示する具体的な中身。
 const PHONE: Waterfall = {
   kind: "phone",
   title: "電話番号検証ウォーターフォール",
@@ -28,8 +36,10 @@ const PHONE: Waterfall = {
   tag: "リアルタイム検証済み",
 };
 
+// プロバイダ用アイコンの背景に使う色の候補。
 const SQUARE = ["#ff77b8", "#8b7bd8", "#5bbd8a", "#e0a24e", "#5aa9e6", "#c77dd8"];
 
+// 各プロバイダの頭文字を色付き四角に入れた小さなアイコンを作る部品。
 function ProviderIcon({ name, i }: { name: string; i: number }) {
   return (
     <span
@@ -41,6 +51,7 @@ function ProviderIcon({ name, i }: { name: string; i: number }) {
   );
 }
 
+// カードの見出しに置くアイコン。種類がメールなら封筒、電話なら受話器の絵を描く。
 function HeaderIcon({ kind }: { kind: "email" | "phone" }) {
   return (
     <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-brand-soft text-brand">
@@ -55,6 +66,7 @@ function HeaderIcon({ kind }: { kind: "email" | "phone" }) {
   );
 }
 
+// 渡された1件ぶんのデータ（w）を使って、検証カードを1枚組み立てる部品。
 function WaterfallCard({ w }: { w: Waterfall }) {
   return (
     <div className="rounded-2xl border border-line bg-paper p-6">
@@ -105,8 +117,10 @@ function WaterfallCard({ w }: { w: Waterfall }) {
   );
 }
 
+// セクション全体を組み立てる部品。見出しと説明文の下に、メール・電話の2枚のカードを並べる。
 export function ContactWaterfall() {
   return (
+    // id="data" はナビの「Partners」リンクからここへスクロールしてくるための目印。
     <section id="data" className="scroll-mt-20 border-t border-line/60 py-20">
       <div className="mx-auto max-w-6xl px-6">
         <h2 className="font-serif-display text-3xl text-ink sm:text-4xl">

@@ -1,19 +1,32 @@
 "use client";
 
+/**
+ * Workspace（ワークスペース）画面
+ * この画面は「リード（見込み客）探し」のメイン作業スペースです。
+ * 左側のチャット欄に理想の顧客像を文章で入力すると、AIが検索プランを作り、
+ * 実行すると見つかった会社を右側の一覧に1件ずつ表示していきます。
+ * （リード = 営業のターゲットになる見込み客の会社や人のこと）
+ */
+
+// React の基本的な機能を読み込みます。
+// useState: 画面が覚えておく値（状態）を管理する / useRef: 再描画をまたいで値を保持する箱 / useCallback: 関数を作り直さず使い回す
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Lead, Market, SearchPlan } from "@/lib/domain/types";
 import { FitBar, CompanyAvatar } from "./FitBar";
 import { LeadDrawer } from "./LeadDrawer";
 
+// 画面の進行状態を表す種類。idle=待機中 / planning=プラン作成中 / plan_ready=プラン完成 / running=検索実行中 / done=完了
 type Phase = "idle" | "planning" | "plan_ready" | "running" | "done";
 
+// 進行状況として画面に流す1行分のログの形。id=行の番号 / text=表示文 / kind=情報かOK(完了)か
 interface ProgressLine {
   id: number;
   text: string;
   kind: "info" | "ok";
 }
 
+// 入力欄が空のときに例として提示する、検索の入力例（サジェスト）の一覧
 const SUGGESTIONS = [
   "東京の歯科医院で、スタッフを採用中の医院を探して",
   "フロリダで技術者を採用中、かつGoogle広告を出しているHVAC企業",
@@ -30,28 +43,32 @@ export function Workspace({
   market: Market;
   initialBalance: number;
 }) {
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [input, setInput] = useState("");
-  const [userPrompt, setUserPrompt] = useState("");
-  const [plan, setPlan] = useState<SearchPlan | null>(null);
-  const [sessionId, setSessionId] = useState<string | undefined>();
-  const [progress, setProgress] = useState<ProgressLine[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [balance, setBalance] = useState(initialBalance);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Lead | null>(null);
-  const [saved, setSaved] = useState(false);
-  const progressCounter = useRef(0);
-  const router = useRouter();
+  // ここから画面が覚えておく値（state）の定義です。値が変わると画面が自動で描き直されます。
+  const [phase, setPhase] = useState<Phase>("idle"); // 今どの進行状態か（待機/作成中/実行中など）
+  const [input, setInput] = useState(""); // 入力欄に打ち込んでいる途中の文字
+  const [userPrompt, setUserPrompt] = useState(""); // 送信済みのユーザーの指示文（チャットの吹き出しに表示）
+  const [plan, setPlan] = useState<SearchPlan | null>(null); // AIが作った検索プラン（まだ無ければ null）
+  const [sessionId, setSessionId] = useState<string | undefined>(); // 会話の続きを覚えておくための識別子
+  const [progress, setProgress] = useState<ProgressLine[]>([]); // 進行状況ログの一覧
+  const [leads, setLeads] = useState<Lead[]>([]); // 見つかったリード（見込み客）の一覧
+  const [balance, setBalance] = useState(initialBalance); // 残りクレジット（検索に使うポイント）の残高
+  const [jobId, setJobId] = useState<string | null>(null); // 実行中の検索ジョブ（処理）のID
+  const [selected, setSelected] = useState<Lead | null>(null); // 詳細パネルを開くために選んだリード
+  const [saved, setSaved] = useState(false); // 結果をリストに保存済みかどうか
+  const progressCounter = useRef(0); // ログ行に一意の番号を振るためのカウンター（画面を描き直しても値が消えない箱）
+  const router = useRouter(); // Next.js の画面遷移・再読み込みを行う道具
 
+  // 進行状況ログを1行追加する関数。番号を1つ増やして、既存の一覧の末尾に新しい行を足します。
   const pushProgress = (text: string, kind: "info" | "ok" = "info") => {
     progressCounter.current += 1;
     setProgress((p) => [...p, { id: progressCounter.current, text, kind }]);
   };
 
+  // ユーザーの指示文をサーバーに送り、検索プランを作ってもらう関数。
+  // 送信すると画面をリセットして「プラン作成中」の状態にし、返ってきたプランを画面に反映します。
   const submitPrompt = useCallback(
     async (prompt: string) => {
-      if (!prompt.trim()) return;
+      if (!prompt.trim()) return; // 空文字や空白だけのときは何もしない
       setUserPrompt(prompt);
       setInput("");
       setPhase("planning");
@@ -59,17 +76,19 @@ export function Workspace({
       setLeads([]);
       setProgress([]);
       setSaved(false);
+      // サーバーの /api/plan にユーザーの指示を送り、AIに検索プランを作らせる（await = 返事が来るまで待つ）
       const res = await fetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId, prompt, sessionId }),
       });
+      // 通信に失敗したときはエラーを表示して待機状態に戻す
       if (!res.ok) {
         pushProgress("プランの作成に失敗しました");
         setPhase("idle");
         return;
       }
-      const data = await res.json();
+      const data = await res.json(); // 返ってきたデータを JSON として読み取る
       setSessionId(data.sessionId);
       setPlan(data.plan);
       setPhase("plan_ready");
@@ -77,54 +96,69 @@ export function Workspace({
     [workspaceId, sessionId]
   );
 
+  // 作成済みの検索プランを実際に実行する関数。
+  // サーバーに検索ジョブ（処理）を開始させ、進捗と結果をリアルタイムで受け取ります。
   const runPlan = useCallback(async () => {
-    if (!plan) return;
-    setPhase("running");
-    setLeads([]);
-    setProgress([]);
+    if (!plan) return; // プランがまだ無ければ何もしない
+    setPhase("running"); // 状態を「実行中」に
+    setLeads([]); // 前回の結果をクリア
+    setProgress([]); // 前回のログをクリア
+    // 検索ジョブの開始をサーバーに依頼する
     const res = await fetch("/api/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ planId: plan.id }),
     });
+    // 開始に失敗したとき（クレジット不足など）はエラーを出してプラン完成の状態に戻す
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       pushProgress(e.error === "insufficient_credits" ? "クレジットが不足しています" : "実行に失敗しました");
       setPhase("plan_ready");
       return;
     }
-    const { jobId: jid } = await res.json();
+    const { jobId: jid } = await res.json(); // 開始できたジョブのIDを受け取る
     setJobId(jid);
 
+    // EventSource（SSE）= サーバーから小さな更新を1件ずつ送ってもらう仕組み。
+    // これにより、検索の進捗やリードを「見つかった順」に逐次受け取って画面へ反映できます。
     const ev = new EventSource(`/api/jobs/${jid}/stream`);
+    // サーバーからメッセージが届くたびに呼ばれる処理
     ev.onmessage = async (e) => {
-      const data = JSON.parse(e.data);
+      const data = JSON.parse(e.data); // 届いた文字列を JSON として解釈
       if (data.type === "lead") {
         // リード1件を取得して追加（逐次表示）
         const r = await fetch(`/api/leads?jobId=${jid}`);
         const { leads: fresh, job } = await r.json();
-        setLeads(fresh);
-        if (job) setBalance(initialBalanceAfter(initialBalance, job.creditsSpent));
+        setLeads(fresh); // 最新のリード一覧で画面を更新
+        if (job) setBalance(initialBalanceAfter(initialBalance, job.creditsSpent)); // 使った分だけ残高を減らす
       } else if (data.type === "completed") {
+        // 検索がすべて完了したとき
         pushProgress(data.message, "ok");
         const r = await fetch(`/api/leads?jobId=${jid}`);
         const { leads: fresh, job } = await r.json();
         setLeads(fresh);
         if (job) setBalance(initialBalanceAfter(initialBalance, job.creditsSpent));
-        setPhase("done");
+        setPhase("done"); // 状態を「完了」に
         router.refresh(); // サーバー描画のヘッダー残高も同期
       } else {
+        // それ以外は途中経過のお知らせとしてログに追加
         pushProgress(data.message, "info");
       }
     };
+    // サーバーから「終了」の合図が来たら接続を閉じる（クリーンアップ = 後始末）
     ev.addEventListener("end", () => ev.close());
+    // 通信エラーが起きた場合も接続を閉じる
     ev.onerror = () => ev.close();
   }, [plan, initialBalance, router]);
 
+  // 「除外」されていないリードだけを表示対象として絞り込む
   const activeLeads = leads.filter((l) => l.status !== "excluded");
 
+  // リードの状態（お気に入り/新規/除外など）を切り替え、その変更をサーバーにも保存する関数
   const toggleStatus = async (lead: Lead, status: Lead["status"]) => {
+    // まず画面上のリストをすぐに更新（該当リードの状態だけ差し替え）して、操作をすぐ反映
     setLeads((ls) => ls.map((l) => (l.id === lead.id ? { ...l, status } : l)));
+    // 続いてサーバーにも変更を保存する（PATCH = 一部だけ更新する通信）
     await fetch("/api/leads", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -132,7 +166,9 @@ export function Workspace({
     });
   };
 
+  // 現在表示しているリードをひとつのリストとして保存する関数
   const saveList = async () => {
+    // 保存名を「業種 · 今日の日付」の形で自動生成（industry が無ければ「リード」）
     const name = `${plan?.icp.industry ?? "リード"} · ${new Date().toLocaleDateString("ja-JP")}`;
     await fetch("/api/lists", {
       method: "POST",
@@ -142,11 +178,13 @@ export function Workspace({
     setSaved(true);
   };
 
+  // ここからが実際に画面へ表示する見た目（JSX）です。左が入力チャット、右が結果一覧の2カラム構成。
   return (
     <div className="grid h-full grid-cols-1 md:grid-cols-[360px_1fr]">
-      {/* Chat pane */}
+      {/* Chat pane（左側：チャット入力ペイン） */}
       <div className="flex min-h-0 flex-col border-r border-line bg-cream-100/30">
         <div className="scroll-thin flex-1 space-y-3 overflow-y-auto p-4">
+          {/* 待機状態のときだけ、案内文と入力例のボタンを表示 */}
           {phase === "idle" && (
             <div className="pt-6">
               <h2 className="font-serif-display text-2xl text-ink">何をお探しですか？</h2>
@@ -154,6 +192,7 @@ export function Workspace({
                 理想の顧客像を自然な言葉で入力してください。GTM の AI が検索プランを作ります。
               </p>
               <div className="mt-5 space-y-2">
+                {/* 入力例を一覧で並べ、押すとその文でそのまま検索を開始する */}
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
@@ -167,20 +206,24 @@ export function Workspace({
             </div>
           )}
 
+          {/* 送信済みのユーザーの指示文を、右寄せの吹き出しとして表示 */}
           {userPrompt && (
             <div className="ml-auto max-w-[90%] rounded-2xl rounded-tr-sm bg-paper px-3.5 py-2.5 text-sm text-ink shadow-sm">
               {userPrompt}
             </div>
           )}
 
+          {/* プラン作成中はゆっくり点滅する案内を表示 */}
           {phase === "planning" && (
             <div className="text-sm text-muted animate-pulse-soft">検索プランを作成中…</div>
           )}
 
+          {/* プランが出来たら、その内容カードと「実行」ボタンを表示（実行中は running=true） */}
           {plan && (phase === "plan_ready" || phase === "running" || phase === "done") && (
             <PlanCard plan={plan} onRun={runPlan} running={phase !== "plan_ready"} />
           )}
 
+          {/* 進行状況ログが1件以上あれば、まとめて表示 */}
           {progress.length > 0 && (
             <div className="space-y-1.5 rounded-2xl bg-brand-soft/40 p-3 text-sm">
               {progress.map((p, i) => (
@@ -193,13 +236,14 @@ export function Workspace({
           )}
         </div>
 
-        {/* input */}
+        {/* input（画面下部の文字入力欄） */}
         <div className="border-t border-line p-3">
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-paper p-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
+                // Enter キー（Shift無し）で送信、Shift+Enter は改行にする
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   submitPrompt(input);
@@ -222,8 +266,9 @@ export function Workspace({
         </div>
       </div>
 
-      {/* Results pane */}
+      {/* Results pane（右側：検索結果の一覧ペイン） */}
       <div className="flex min-h-0 flex-col bg-cream">
+        {/* 結果一覧の上部バー（件数・保存ボタン・CSV書き出し） */}
         <ResultsHeader
           plan={plan}
           count={activeLeads.length}
@@ -233,6 +278,7 @@ export function Workspace({
           canExport={activeLeads.length > 0}
         />
         <div className="scroll-thin min-h-0 flex-1 overflow-auto p-4">
+          {/* リードが0件なら空状態の案内、1件以上あれば結果の表を表示 */}
           {activeLeads.length === 0 ? (
             <EmptyState phase={phase} />
           ) : (
@@ -245,6 +291,7 @@ export function Workspace({
         </div>
       </div>
 
+      {/* リードが選択されているときだけ、右からスライドする詳細パネル（ドロワー）を表示 */}
       {selected && (
         <LeadDrawer lead={selected} onClose={() => setSelected(null)} onToggle={toggleStatus} />
       )}
@@ -252,10 +299,12 @@ export function Workspace({
   );
 }
 
+// 元の残高から使った分を引いた残りを計算する。マイナスにならないよう最小0にする。
 function initialBalanceAfter(before: number, spent: number) {
   return Math.max(0, before - spent);
 }
 
+// PlanCard: AIが作った検索プランの中身（業種・地域・見積りなど）を表示し、実行ボタンを置くカード部品
 function PlanCard({
   plan,
   onRun,
@@ -288,6 +337,7 @@ function PlanCard({
   );
 }
 
+// Row: 「ラベル：値」の1行を表示する小さな部品（プランカードの各項目に使う）
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-3">
@@ -297,6 +347,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ResultsHeader: 結果一覧の上部バー。プラン名と件数を左に、保存ボタンとCSV書き出しを右に表示する
 function ResultsHeader({
   plan,
   count,
@@ -341,10 +392,12 @@ function ResultsHeader({
   );
 }
 
+// EmptyState: リードがまだ無いときの表示。実行中なら回転スピナー、そうでなければ案内文を出す
 function EmptyState({ phase }: { phase: Phase }) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="max-w-sm text-center">
+        {/* 実行中は探索中のスピナー、それ以外は「まだリードはありません」の案内 */}
         {phase === "running" ? (
           <>
             <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-line border-t-brand" />
@@ -363,7 +416,9 @@ function EmptyState({ phase }: { phase: Phase }) {
   );
 }
 
+// ConfBadge: 信頼度スコア（0〜100）を色付きバッジで表示する部品
 function ConfBadge({ score }: { score: number }) {
+  // スコアに応じて3段階（高80以上 / 中50以上 / 低）に振り分ける
   const tier = score >= 80 ? "high" : score >= 50 ? "mid" : "low";
   const cls =
     tier === "high"
@@ -379,6 +434,8 @@ function ConfBadge({ score }: { score: number }) {
   );
 }
 
+// ResultsTable: 見つかったリードを表形式で一覧表示する部品。
+// 各行をクリックすると詳細パネルが開き、星ボタンでお気に入りの切り替えができる。
 function ResultsTable({
   leads,
   onSelect,
@@ -405,6 +462,7 @@ function ResultsTable({
           </tr>
         </thead>
         <tbody>
+          {/* リードを1件ずつ行として並べる。i は0から始まる連番なので表示では +1 して見せる */}
           {leads.map((l, i) => (
             <tr
               key={l.id}
@@ -435,6 +493,7 @@ function ResultsTable({
               </td>
               <td className="px-3 py-2 text-ink-soft">{l.buyingSignal}</td>
               <td className="px-3 py-2">
+                {/* 星ボタン: 押すとお気に入り⇔通常を切り替え。行クリック（詳細表示）が同時に起きないよう stopPropagation で止める */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

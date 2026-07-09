@@ -1,8 +1,14 @@
 "use client";
 
+// React の機能を読み込みます。
+// useEffect: 表示後に処理を動かす / useRef: 要素や値を保持する箱 / useState: 状態を覚える / useSyncExternalStore: OS設定などの外部状態を購読する
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /**
+ * AnimatedPromptSection（トップページの入力デモ欄）
+ * この部品は、AIへの指示欄に文字が「1文字ずつ打たれる → 少し止まる → 消える → 次の文」を
+ * 延々と繰り返して見せる、タイピング演出のセクションです。実際の入力はできない見本です。
+ *
  * トップページのデモ専用セクション。
  * AIプロンプト入力欄の中で「指示文が1文字ずつ入力→停止→末尾から削除→次の文」を
  * 無限ループするタイピングアニメーションを表示し、GTM の利用体験を視覚的に伝える。
@@ -20,7 +26,8 @@ const PROMPTS = [
   "Google広告を出している地域の工務店を収集し、採用シグナルがある企業だけ通知して",
 ];
 
-// タイミング設定（ms）
+// タイミング設定（ms = ミリ秒。1000ミリ秒 = 1秒）。演出の速さや間の長さをここで調整する。
+// 「MIN + ランダムなJITTER（ゆらぎ）」で、機械的すぎない自然なリズムにしている。
 const TYPE_MIN = 35;
 const TYPE_JITTER = 20; // 35〜55ms/文字
 const PUNCT_MIN = 100;
@@ -33,17 +40,21 @@ const EMPTY_MIN = 250;
 const EMPTY_JITTER = 250; // 全削除後 250〜500ms 停止
 const START_DELAY = 450; // 画面内に入ってから最初の入力までの待機
 
+// 句読点などの記号を判定するパターン。記号のあとは少し長めに間を取るために使う。
 const PUNCT = /[、。，．,.！？!?]/;
 
 /** 画面内に入ったか（1回だけ true）を返す */
+// 対象の要素がスクロールで画面に入ってきたかを検知する部品。入ったら演出を始める合図に使う。
 function useInView<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(false);
+  const ref = useRef<T | null>(null); // 監視したい要素をつなぐ参照
+  const [inView, setInView] = useState(false); // 画面内に入ったか
   useEffect(() => {
     const el = ref.current;
-    if (!el || inView) return;
+    if (!el || inView) return; // 要素が無い/検知済みなら何もしない
+    // IntersectionObserver = 要素が見えているかを監視するブラウザの仕組み
     const ob = new IntersectionObserver(
       (entries) => {
+        // 要素が一定割合（35%）見えたら画面内と判断し、監視を止める
         if (entries[0]?.isIntersecting) {
           setInView(true);
           ob.disconnect();
@@ -52,12 +63,13 @@ function useInView<T extends HTMLElement>() {
       { threshold: 0.35 }
     );
     ob.observe(el);
-    return () => ob.disconnect();
+    return () => ob.disconnect(); // クリーンアップ（後始末）: 部品が消えるとき監視をやめる
   }, [inView]);
   return { ref, inView };
 }
 
 /** OS/ブラウザの「アニメーションを減らす」設定を検知（effect内setStateを避け useSyncExternalStore で購読） */
+// 利用者が「動きを減らす」設定にしているかを調べる部品。true ならアニメを止める配慮に使う。
 function useReducedMotion() {
   return useSyncExternalStore(
     (cb) => {
@@ -77,43 +89,52 @@ function useReducedMotion() {
  * （React Strict Mode の二重起動でも cancelled フラグで多重ループを防ぐ）。
  */
 function useTypingAnimation(prompts: string[], enabled: boolean) {
-  const [displayed, setDisplayed] = useState("");
+  const [displayed, setDisplayed] = useState(""); // 今この瞬間に画面へ出している文字列
 
   useEffect(() => {
     if (!enabled) return; // reduced motion / 画面外：静的表示は下の導出で行う
 
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    let promptIndex = 0;
-    let charIndex = 0;
+    let cancelled = false; // 部品が消えたら true にして演出を止める目印
+    let timer: ReturnType<typeof setTimeout>; // 次の一手を予約するタイマー
+    let promptIndex = 0; // 今どの文（PROMPTSの何番目）を演出しているか
+    let charIndex = 0; // その文の何文字目まで表示しているか
+    // 今の動作モード。typing=入力中 / pausing=入力後の停止 / deleting=削除中 / empty=空になった後の停止
     let mode: "typing" | "pausing" | "deleting" | "empty" = "typing";
 
+    // 待ち時間を「最小値 + ランダムなゆらぎ」で計算する小さな道具
     const j = (min: number, jitter: number) => min + Math.random() * jitter;
 
+    // tick = 演出の1コマを進める関数。少し待ってはこの関数自身を呼び直し、状態を1歩ずつ進めていく。
     const tick = () => {
       if (cancelled) return;
-      const full = prompts[promptIndex];
+      const full = prompts[promptIndex]; // 今扱っている文の全文
 
       if (mode === "typing") {
+        // 入力中: 表示する文字数を1つ増やす
         charIndex += 1;
-        setDisplayed(full.slice(0, charIndex));
+        setDisplayed(full.slice(0, charIndex)); // 先頭からcharIndex文字目までを表示
         if (charIndex >= full.length) {
+          // 全部打ち終わったら「停止」モードに移り、少し長めに待つ
           mode = "pausing";
           timer = setTimeout(tick, j(DONE_MIN, DONE_JITTER));
         } else {
+          // まだ途中なら、直前に打った文字が記号かどうかで次までの間隔を変える
           const justTyped = full[charIndex - 1];
           const delay = PUNCT.test(justTyped)
-            ? j(PUNCT_MIN, PUNCT_JITTER)
-            : j(TYPE_MIN, TYPE_JITTER);
+            ? j(PUNCT_MIN, PUNCT_JITTER) // 記号のあとは長め
+            : j(TYPE_MIN, TYPE_JITTER); // 通常文字は短め
           timer = setTimeout(tick, delay);
         }
       } else if (mode === "pausing") {
+        // 停止のあとは削除モードへ切り替える
         mode = "deleting";
         timer = setTimeout(tick, j(DEL_MIN, DEL_JITTER));
       } else if (mode === "deleting") {
+        // 削除中: 表示文字数を1つ減らす（末尾から消していく）
         charIndex -= 1;
         setDisplayed(full.slice(0, Math.max(0, charIndex)));
         if (charIndex <= 0) {
+          // 全部消えたら「空」モードへ
           mode = "empty";
           timer = setTimeout(tick, j(EMPTY_MIN, EMPTY_JITTER));
         } else {
@@ -121,6 +142,7 @@ function useTypingAnimation(prompts: string[], enabled: boolean) {
         }
       } else {
         // empty → 次の文章へ
+        // 次の文へ進む（最後の文まで行ったら % で最初の文に戻る）
         promptIndex = (promptIndex + 1) % prompts.length;
         charIndex = 0;
         mode = "typing";
@@ -131,6 +153,7 @@ function useTypingAnimation(prompts: string[], enabled: boolean) {
     // 初期 state が "" なので空から開始。最初の入力までは待機。
     timer = setTimeout(tick, START_DELAY);
 
+    // クリーンアップ（後始末）: 部品が消えるときに演出を止め、予約中のタイマーを解除する
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -144,13 +167,15 @@ function useTypingAnimation(prompts: string[], enabled: boolean) {
   return { displayed: shown, isComplete };
 }
 
+// compact=true のときは見出しや背景なしで入力欄だけを表示する（他の場所に埋め込む用）
 export function AnimatedPromptSection({ compact = false }: { compact?: boolean } = {}) {
-  const { ref, inView } = useInView<HTMLElement>();
-  const reduced = useReducedMotion();
-  const enabled = inView && !reduced;
-  const { displayed, isComplete } = useTypingAnimation(PROMPTS, enabled);
+  const { ref, inView } = useInView<HTMLElement>(); // この欄が画面に入ったか
+  const reduced = useReducedMotion(); // 「動きを減らす」設定がオンか
+  const enabled = inView && !reduced; // 画面内かつ動きを減らす設定でなければ演出を有効化
+  const { displayed, isComplete } = useTypingAnimation(PROMPTS, enabled); // 表示中の文字と、入力完了かどうか
 
   // 登場アニメーション（inView で1回だけ）
+  // 画面に入ったとき、または動きを減らす設定のときに「表示済み」の見た目にする
   const revealed = inView || reduced;
   const revealStyle = (delayMs: number) => ({
     transitionDelay: `${delayMs}ms`,
@@ -194,6 +219,7 @@ export function AnimatedPromptSection({ compact = false }: { compact?: boolean }
           className="flex-1 text-[16px] leading-[1.65] text-ink sm:text-[18px]"
           style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
         >
+          {/* 現在タイピング中の文字列。うしろに点滅するカーソル（縦棒）を表示する */}
           {displayed}
           <span
             className={`ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[3px] bg-ink align-baseline ${
@@ -236,6 +262,7 @@ export function AnimatedPromptSection({ compact = false }: { compact?: boolean }
   );
 
   // compact：Hero 内に置く用（見出し・セクション背景なしで入力欄のみ）
+  // compact モードのときは、余計な装飾を省いて入力欄だけを返す
   if (compact) {
     return (
       <section ref={ref} aria-label="AIプロンプトのデモ" className="mx-auto w-full max-w-4xl">

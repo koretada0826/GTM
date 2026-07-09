@@ -1,5 +1,11 @@
+// この部品は、トップページに置く「動作イメージのデモ画面」です。
+// 左に会話（チャット）風のやり取り、右に検索結果の会社一覧の表を並べ、
+// 実際に使うとどう見えるかを見本として静止画的に見せます（本物のデータではありません）。
+
 import { FitBar, CompanyAvatar } from "./FitBar";
 
+// デモ用のダミーの会社データ一覧。1行が [会社名, 業種, 従業員数, シグナル, 適合度スコア]。
+// ※シグナル = その会社が今動いている兆候（例：採用強化中、広告出稿中）。
 const DEMO_ROWS = [
   ["株式会社あおば歯科", "歯科・デンタル", "12", "採用強化中（3名）", 97],
   ["みらいデンタルクリニック", "歯科・デンタル", "8", "新規開業（今月）", 95],
@@ -15,7 +21,7 @@ export function LandingDemo() {
   return (
     <div className="overflow-hidden rounded-2xl border border-line bg-paper shadow-[0_20px_60px_-30px_rgba(0,0,0,0.3)]">
       <div className="grid md:grid-cols-[320px_1fr]">
-        {/* Chat pane */}
+        {/* Chat pane：左側のチャット風パネル（ユーザーの依頼とAIの返答の見本） */}
         <div className="border-b border-line bg-cream-100/40 p-4 md:border-b-0 md:border-r">
           <div className="mb-3 text-xs text-muted">歯科クリニック開拓 · JP</div>
           <div className="rounded-xl bg-paper p-3 text-sm text-ink shadow-sm">
@@ -29,7 +35,7 @@ export function LandingDemo() {
           </div>
         </div>
 
-        {/* Table pane */}
+        {/* Table pane：右側の結果一覧テーブル（見つかった会社を表で表示） */}
         <div className="p-4">
           <div className="mb-3 flex items-center justify-between">
             <div>
@@ -55,6 +61,7 @@ export function LandingDemo() {
                 </tr>
               </thead>
               <tbody>
+                {/* 上で用意したダミーデータを1行ずつ表の行に変換して並べる */}
                 {DEMO_ROWS.map(([name, cat, hc, sig, score], i) => (
                   <tr key={i} className="border-t border-line/70">
                     <td className="px-3 py-2">

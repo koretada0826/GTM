@@ -1,6 +1,12 @@
+// この部品は、業種（Verticals）セクションの下に置く「見本カード」を作ります。
+// まだ中身が無い状態を表す3枚の骨組みカード（スケルトン）を並べ、
+// 真ん中に「上で対象を選ぶと実例が出ます」という案内ラベルを重ねます。
+// ※スケルトン = 実データの前に表示する、灰色の枠だけの仮表示。
+
 // Verticals セクション下部に置く、origami 風のスケルトン例カード3枚。
 // 中央のカードに「対象を選ぶと例が表示されます」のヒントピルを重ねる。
 
+// カード1枚ぶんの骨組み（見出しっぽい灰色バーと、表っぽい灰色の行）を描く。
 function SkeletonCard() {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-5">
@@ -35,10 +41,12 @@ function SkeletonCard() {
   );
 }
 
+// 骨組みカードを3枚横に並べ、真ん中のカードには案内ラベルを重ねる部品。
 export function VerticalExamples() {
   return (
     <div className="relative mt-12 grid gap-5 md:grid-cols-3">
       <SkeletonCard />
+      {/* 中央のカードだけは、上に案内ラベルを重ねるため入れ物で包む */}
       <div className="relative">
         <SkeletonCard />
         {/* 中央のヒントピル */}

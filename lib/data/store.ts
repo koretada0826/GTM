@@ -33,6 +33,7 @@ interface DB {
   lists: Map<string, LeadList>;
   apiKeys: Map<string, ApiKey>;
   subscriptions: Map<string, Subscription>; // key: workspaceId
+  grantedKeys: Set<string>; // クレジット付与の冪等キー（二重計上防止）
 }
 
 // HMR で state が飛ばないよう globalThis に保持
@@ -53,6 +54,7 @@ function fresh(): DB {
     lists: new Map(),
     apiKeys: new Map(),
     subscriptions: new Map(),
+    grantedKeys: new Set(),
   };
 }
 
@@ -311,23 +313,46 @@ export function upsertSubscription(
   return sub;
 }
 
-// プラン変更を適用：workspace.plan とウォレット月次付与量を更新し、当月分を付与
-export function applyPlanChange(wid: string, plan: Plan): void {
+// ---- プラン設定とクレジット付与を「分離」して二重計上を防ぐ ----
+//
+// なぜ分けるか：
+//   Stripe は新規契約時に checkout.session.completed / customer.subscription.updated /
+//   invoice.paid を“ほぼ同時”に発火する。以前は全部で「プラン設定＋クレジット付与」を
+//   一緒にやっていたため、同じ月のクレジットが2〜3回ダブって足されていた（＝二重計上）。
+//   → 「プランを変える処理」と「クレジットを足す処理」を別関数にし、
+//     クレジット付与は invoice.paid でだけ・冪等（同じ支払いは1回だけ）に実行する。
+
+// プランを変えるだけ（クレジット残高は増やさない）
+export function setWorkspacePlan(wid: string, plan: Plan): void {
   const ws = db.workspaces.get(wid);
   if (!ws) return;
   ws.plan = plan;
-  const grant = PLANS[plan].monthlyCredits;
   const w = db.wallets.get(wid);
-  if (w) {
-    w.monthlyGrant = grant;
-    w.balance += grant;
-    db.creditTx.push({
-      id: id("ctx"),
-      workspaceId: wid,
-      delta: grant,
-      reason: "grant",
-      note: `${PLANS[plan].label} プランのクレジット付与`,
-      createdAt: Date.now(),
-    });
+  if (w) w.monthlyGrant = PLANS[plan].monthlyCredits;
+}
+
+// 月次クレジットを付与する（dedupeKey が同じ支払いは二度と付与しない＝二重計上防止）
+export function grantMonthlyCredits(wid: string, plan: Plan, dedupeKey?: string): void {
+  if (dedupeKey) {
+    if (db.grantedKeys.has(dedupeKey)) return; // 既に付与済み → スキップ
+    db.grantedKeys.add(dedupeKey);
   }
+  const w = db.wallets.get(wid);
+  if (!w) return;
+  const grant = PLANS[plan].monthlyCredits;
+  w.balance += grant;
+  db.creditTx.push({
+    id: id("ctx"),
+    workspaceId: wid,
+    delta: grant,
+    reason: "grant",
+    note: `${PLANS[plan].label} プランのクレジット付与`,
+    createdAt: Date.now(),
+  });
+}
+
+// モック（鍵未設定）用：プラン設定＋当月付与を1回だけ実行する簡易版
+export function applyPlanChange(wid: string, plan: Plan): void {
+  setWorkspacePlan(wid, plan);
+  grantMonthlyCredits(wid, plan); // モックは都度1回付与（Webhookが無いため）
 }
