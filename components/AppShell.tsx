@@ -93,8 +93,9 @@ export function AppShell({
         {/* 上部ヘッダー: 左にロゴとワークスペース名、右にクレジット残高を表示 */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-cream/80 px-5 backdrop-blur">
           {/* ヘッダー左側：ロゴ → 区切りの「/」→ ワークスペース名 → 市場ラベル */}
+          {/* ロゴをクリックすると公開トップページ("/")へ戻れる（宣伝ページ・料金などを見に行ける） */}
           <div className="flex items-center gap-3">
-            <Logo href="/app" />
+            <Logo href="/" />
             <span className="text-muted">/</span>
             <span className="text-sm text-ink">{workspace.name}</span>
             {/* この作業スペースの対象市場を示す小さな丸バッジ */}
