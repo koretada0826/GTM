@@ -15,8 +15,10 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // 本文から対象ワークスペースを読み取る
-  const { workspaceId } = (await req.json()) as { workspaceId: string };
+  // 本文から対象ワークスペースを読み取る（壊れたbodyは400）
+  const body = await req.json().catch(() => null);
+  if (!body) return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  const { workspaceId } = body as { workspaceId: string };
   // 所有者確認：そのワークスペースが本人のものかを確認する
   const ws = getWorkspace(workspaceId);
   if (!ws || ws.ownerId !== user.id)

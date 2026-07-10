@@ -15,35 +15,49 @@ import type { User } from "@/lib/domain/types";
 const COOKIE = "gtm_session";
 
 // 署名に使う秘密鍵。改ざん防止の要。
-// 本番では必ず環境変数 AUTH_SECRET を設定する（未設定なら開発用の固定値でフォールバック）。
-const SECRET = process.env.AUTH_SECRET || "gtm-dev-insecure-secret-change-me";
+// ★本番(production)で AUTH_SECRET 未設定なら「起動を止める(throw)」。
+//   以前は公開済みの固定値へフォールバックしていたため、その鍵で誰でも署名を偽造できた（監査で致命指摘）。
+function getSecret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (s) return s;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET is required in production");
+  }
+  return "gtm-dev-only-secret"; // 開発専用のフォールバック（本番では上で弾かれる）
+}
+
+// トークンの有効期限（30日）
+const TOKEN_TTL_MS = 60 * 60 * 24 * 30 * 1000;
 
 // ---- 署名付きトークンの仕組み（cookie の偽装を防ぐ）----
-// 以前は cookie に「userId をそのまま」保存していたため、値を書き換えれば他人になりすませた。
-// そこで「userId + その HMAC 署名」をセットで保存し、読み取り時に署名を検証する。
-// 署名は SECRET を知らないと作れないので、値を書き換えると検証に失敗し、なりすませない。
+// 形式: "userId.発行時刻.署名"。署名は SECRET を知らないと作れないので偽装不可。
+// 発行時刻を含めて署名し、検証時に期限切れを弾く（盗まれても永久には使えない）。
 
 function sign(value: string): string {
-  return createHmac("sha256", SECRET).update(value).digest("base64url");
+  return createHmac("sha256", getSecret()).update(value).digest("base64url");
 }
 
-// userId から「userId.署名」というトークンを作る
+// userId から「userId.発行時刻.署名」というトークンを作る
 function createToken(userId: string): string {
-  return `${userId}.${sign(userId)}`;
+  const payload = `${userId}.${Date.now()}`;
+  return `${payload}.${sign(payload)}`;
 }
 
-// トークンを検証し、正しければ userId を、改ざんされていれば null を返す
+// トークンを検証し、正しく期限内なら userId を、無効/改ざん/期限切れなら null を返す
 function verifyToken(token: string | undefined): string | null {
   if (!token) return null;
-  const dot = token.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const userId = token.slice(0, dot);
-  const provided = token.slice(dot + 1);
-  const expected = sign(userId);
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [userId, issuedAtStr, provided] = parts;
+  const payload = `${userId}.${issuedAtStr}`;
+  const expected = sign(payload);
   // 署名の比較はタイミング攻撃を避けるため timingSafeEqual を使う
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  // 期限切れチェック
+  const issuedAt = Number(issuedAtStr);
+  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > TOKEN_TTL_MS) return null;
   return userId;
 }
 

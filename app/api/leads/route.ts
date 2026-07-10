@@ -23,8 +23,16 @@ export async function GET(req: Request) {
   const ws = getWorkspace(job.workspaceId);
   if (!ws || ws.ownerId !== user.id)
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  // リード一覧とジョブ情報を返す
-  return NextResponse.json({ leads: listLeadsByJob(jobId), job });
+  // リード一覧と、ジョブ情報（★原価 costInternal は内部の機微情報なので画面へ返さない）を返す
+  return NextResponse.json({
+    leads: listLeadsByJob(jobId),
+    job: {
+      id: job.id,
+      status: job.status,
+      resultCount: job.resultCount,
+      creditsSpent: job.creditsSpent,
+    },
+  });
 }
 
 // リードのステータス更新（favorite / excluded / new）

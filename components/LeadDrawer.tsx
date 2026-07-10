@@ -16,6 +16,17 @@ function tierColor(score: number) {
   return score >= 80 ? "#3f7a43" : score >= 50 ? "#8a6d1f" : "#9a3b3b";
 }
 
+// ★URLを安全化：http/https だけ許可する。javascript: など危険なスキームは無効化(#)にする。
+//   実データ源が返すURLに javascript:alert(...) 等が混ざってもクリックで実行されないようにする。
+function safeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? url : "#";
+  } catch {
+    return "#";
+  }
+}
+
 // lead=表示するリード / onClose=閉じる操作 / onToggle=状態（お気に入り・除外など）を切り替える操作
 export function LeadDrawer({
   lead,
@@ -57,7 +68,12 @@ export function LeadDrawer({
             <CompanyAvatar name={lead.companyName} />
             <div>
               <h3 className="font-serif-display text-xl text-ink">{lead.companyName}</h3>
-              <a href={`https://${lead.domain}`} className="text-xs text-brand hover:underline">
+              <a
+                href={safeUrl(`https://${lead.domain}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-brand hover:underline"
+              >
                 {lead.domain}
               </a>
             </div>
@@ -123,7 +139,9 @@ export function LeadDrawer({
             {lead.sources.map((s, i) => (
               <a
                 key={i}
-                href={s.url}
+                href={safeUrl(s.url)}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="block rounded-lg border border-line px-3 py-2 text-sm hover:border-brand/50"
               >
                 <span className="font-medium text-ink">{s.label}</span>

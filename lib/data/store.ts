@@ -60,11 +60,12 @@ function fresh(): DB {
 
 export const db: DB = (g.__gtmdb ??= fresh());
 
-// ---- ID 生成（Math.random は使わずカウンタ＋時刻で決定的寄りに）----
-let counter = 0;
+// ---- ID 生成 ----
+// ★以前は「時刻＋連番」で推測可能だった（監査指摘）。暗号乱数を足して推測できないIDにする。
+//   userId/jobId/ワークスペースID などが推測されると列挙攻撃の入口になるため。
+import { randomBytes } from "crypto";
 export function id(prefix: string): string {
-  counter += 1;
-  return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}`;
+  return `${prefix}_${randomBytes(9).toString("base64url")}`;
 }
 
 // ---- users ----
@@ -162,19 +163,6 @@ export function spendCredits(
   return true;
 }
 
-export function grantCredits(wid: string, amount: number, note: string) {
-  const w = db.wallets.get(wid);
-  if (!w) return;
-  w.balance += amount;
-  db.creditTx.push({
-    id: id("ctx"),
-    workspaceId: wid,
-    delta: amount,
-    reason: "purchase",
-    note,
-    createdAt: Date.now(),
-  });
-}
 
 export function listTransactions(wid: string): CreditTransaction[] {
   return db.creditTx
@@ -236,6 +224,12 @@ export function listJobs(wid: string): Job[] {
     .filter((j) => j.workspaceId === wid)
     .sort((a, b) => b.startedAt - a.startedAt);
 }
+// 実行中（順番待ち/実行中/検証中）のジョブ数を数える（同時実行の上限チェック用）。
+export function countActiveJobs(wid: string): number {
+  return [...db.jobs.values()].filter(
+    (j) => j.workspaceId === wid && (j.status === "queued" || j.status === "running" || j.status === "verifying")
+  ).length;
+}
 
 // ---- leads ----
 export function saveLead(l: Lead) {
@@ -288,10 +282,30 @@ export function listApiKeys(wid: string): ApiKey[] {
 export function findApiKeyByHash(hash: string): ApiKey | undefined {
   return [...db.apiKeys.values()].find((k) => k.keyHash === hash && !k.revokedAt);
 }
+export function getApiKey(keyId: string): ApiKey | undefined {
+  return db.apiKeys.get(keyId);
+}
+// APIキーを失効させる（漏えい時に無効化できるように）。revokedAt を立てるだけで以後照合されない。
+export function revokeApiKey(keyId: string): void {
+  const k = db.apiKeys.get(keyId);
+  if (k) k.revokedAt = Date.now();
+}
 
 // ---- subscriptions / plan change（Stripe連携から呼ばれる）----
 export function getSubscription(wid: string): Subscription | undefined {
   return db.subscriptions.get(wid);
+}
+// StripeのサブスクID/顧客IDから、どのワークスペースの契約かを逆引きする。
+// ★Webhookのイベントに metadata が欠けていても、この逆引きで解約/付与を正しく反映するため。
+export function findWorkspaceByStripe(
+  subscriptionId?: string,
+  customerId?: string
+): string | undefined {
+  for (const s of db.subscriptions.values()) {
+    if (subscriptionId && s.stripeSubscriptionId === subscriptionId) return s.workspaceId;
+    if (customerId && s.stripeCustomerId === customerId) return s.workspaceId;
+  }
+  return undefined;
 }
 
 export function upsertSubscription(
@@ -335,6 +349,8 @@ export function setWorkspacePlan(wid: string, plan: Plan): void {
 export function grantMonthlyCredits(wid: string, plan: Plan, dedupeKey?: string): void {
   if (dedupeKey) {
     if (db.grantedKeys.has(dedupeKey)) return; // 既に付与済み → スキップ
+    // ★メモリ肥大防止：冪等キーが増えすぎたら古い分を捨てる（本番はDBのユニーク制約に移行）
+    if (db.grantedKeys.size > 50000) db.grantedKeys.clear();
     db.grantedKeys.add(dedupeKey);
   }
   const w = db.wallets.get(wid);
@@ -351,8 +367,3 @@ export function grantMonthlyCredits(wid: string, plan: Plan, dedupeKey?: string)
   });
 }
 
-// モック（鍵未設定）用：プラン設定＋当月付与を1回だけ実行する簡易版
-export function applyPlanChange(wid: string, plan: Plan): void {
-  setWorkspacePlan(wid, plan);
-  grantMonthlyCredits(wid, plan); // モックは都度1回付与（Webhookが無いため）
-}

@@ -55,7 +55,8 @@ function emit(job: Job, ev: Omit<JobEvent, "at">, onEvent: (e: JobEvent) => void
 // jobId のジョブを実際に走らせ、各段階の進捗を onEvent 経由で通知していく。
 export async function runSearchJob(
   jobId: string,
-  onEvent: (e: JobEvent) => void
+  onEvent: (e: JobEvent) => void,
+  signal?: AbortSignal // クライアントが接続を切ったら中断するための合図
 ): Promise<void> {
   const { getJob } = await import("@/lib/data/store"); // 必要になった時点で読み込む（動的インポート）
   const job = getJob(jobId);
@@ -145,6 +146,11 @@ export async function runSearchJob(
     const saved: Lead[] = []; // 保存できたリード
 
     for (const lead of merged) { // リードを1件ずつ検証・保存
+      // ★クライアントが接続を切ったら中断（これ以上クレジットを消費しない）
+      if (signal?.aborted) {
+        job.status = "partial";
+        break;
+      }
       // クレジット不足なら部分完了で打ち切り。
       // ★以前は「wallet.balance - creditsSpent」と二重に引いて判定していたバグを修正。
       //   spendCredits が残高を直接減らすので wallet.balance は常に最新。ここは現在残高だけを見る。

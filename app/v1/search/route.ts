@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bearerFrom, resolveApiKey } from "@/lib/auth/apikey";
-import { getWorkspace, getWallet, saveApiKey, getJob } from "@/lib/data/store";
+import { getWorkspace, getWallet, saveApiKey, getJob, countActiveJobs } from "@/lib/data/store";
+import { PLAN_INFO } from "@/lib/domain/types";
 import { createPlan } from "@/lib/agent/planner";
 import { createJob, runSearchJob } from "@/lib/agent/runner";
 import { rateLimit } from "@/lib/ratelimit";
@@ -38,9 +39,18 @@ export async function POST(req: Request) {
     market?: "JP" | "GLOBAL";
     max_results?: number;
   };
-  // 入力チェック：指示文が空なら 400（リクエストが不正）
+  // 入力チェック：指示文が空なら 400、長すぎ（2000文字超）も 400
   if (!body.prompt?.trim())
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
+  if (body.prompt.length > 2000)
+    return NextResponse.json({ error: "prompt too long" }, { status: 400 });
+  // ★market は "JP" / "GLOBAL" のみ許可（未知値は既定へ）。型アサーション頼みをやめ実行時検証する
+  const market = body.market === "JP" || body.market === "GLOBAL" ? body.market : ws.market;
+
+  // 同時実行の上限：プランごとの concurrency を超えていたら 429
+  if (countActiveJobs(ws.id) >= PLAN_INFO[ws.plan].concurrency) {
+    return NextResponse.json({ error: "too_many_running_jobs" }, { status: 429 });
+  }
 
   // クレジット残高チェック：ウォレットが無い or 残高0以下なら 402（すり抜け防止で「!wallet ||」）
   const wallet = getWallet(ws.id);
@@ -50,7 +60,7 @@ export async function POST(req: Request) {
   // 取得件数は 1〜40 の範囲に整える（負数・0・巨大値・数値でない値を弾く＝件数計算の破綻防止）
   const maxResults = Math.max(1, Math.min(Number(body.max_results) || 24, 40));
   // 指示文から検索プランを作成する
-  const plan = createPlan(ws.id, "api", body.prompt, body.market ?? ws.market, maxResults);
+  const plan = createPlan(ws.id, "api", body.prompt, market, maxResults);
   // プランからジョブを作成する
   const job = createJob(plan);
   // API 経由は同期実行（完了まで待つ）

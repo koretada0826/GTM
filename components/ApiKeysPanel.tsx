@@ -4,7 +4,15 @@
 "use client";
 
 import { useState } from "react";
-import type { ApiKey } from "@/lib/domain/types";
+
+// 画面で扱う公開用のキー情報（keyHash=鍵のハッシュは含めない＝漏えい防止）
+export interface PublicApiKey {
+  id: string;
+  name: string;
+  keyPreview: string;
+  createdAt: number;
+  lastUsedAt?: number;
+}
 
 // workspaceId = どの作業スペース用のキーか、initialKeys = 最初から表示しておく既存キーの一覧。
 export function ApiKeysPanel({
@@ -12,10 +20,10 @@ export function ApiKeysPanel({
   initialKeys,
 }: {
   workspaceId: string;
-  initialKeys: ApiKey[];
+  initialKeys: PublicApiKey[];
 }) {
   // 画面上で変化する値を覚えておく箱（state）。
-  const [keys, setKeys] = useState<ApiKey[]>(initialKeys); // 表示中のキー一覧。
+  const [keys, setKeys] = useState<PublicApiKey[]>(initialKeys); // 表示中のキー一覧。
   const [name, setName] = useState(""); // 入力欄に打ち込まれたキー名。
   const [freshKey, setFreshKey] = useState<string | null>(null); // 発行直後のキー（1回だけ全文表示）。
 
@@ -32,6 +40,16 @@ export function ApiKeysPanel({
     setFreshKey(data.raw); // 発行された生のキー文字列を保存し、画面に表示する。
     setKeys((k) => [data.apiKey, ...k]); // 一覧の先頭に新しいキーを追加。
     setName(""); // 入力欄を空に戻す。
+  };
+
+  // 「失効」ボタン：漏れたキーを無効化する。サーバーに削除（失効）を頼み、一覧からも消す。
+  const revoke = async (keyId: string) => {
+    await fetch("/api/apikeys", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keyId }),
+    });
+    setKeys((k) => k.filter((x) => x.id !== keyId));
   };
 
   return (
@@ -77,13 +95,14 @@ export function ApiKeysPanel({
               <th className="px-4 py-2 font-medium">名前</th>
               <th className="px-4 py-2 font-medium">キー</th>
               <th className="px-4 py-2 font-medium">作成日</th>
+              <th className="px-4 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {/* キーが1件も無いときの案内表示 */}
             {keys.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-muted">
+                <td colSpan={4} className="px-4 py-6 text-center text-muted">
                   APIキーはまだありません
                 </td>
               </tr>
@@ -95,6 +114,15 @@ export function ApiKeysPanel({
                 <td className="px-4 py-2 font-mono text-xs text-muted">{k.keyPreview}</td>
                 <td className="px-4 py-2 text-muted">
                   {new Date(k.createdAt).toLocaleDateString("ja-JP")}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {/* 漏れたキーを無効化する失効ボタン */}
+                  <button
+                    onClick={() => revoke(k.id)}
+                    className="text-xs font-medium text-[#9a3b3b] hover:underline"
+                  >
+                    失効
+                  </button>
                 </td>
               </tr>
             ))}

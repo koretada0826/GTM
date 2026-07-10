@@ -12,7 +12,7 @@ import type { JobEvent } from "@/lib/domain/types";
  */
 // SSE でジョブの進捗を配信しながら実行する
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   // URLに含まれるジョブIDを取り出す
@@ -32,21 +32,37 @@ export async function GET(
   // 少しずつデータを流し込む「読み取り可能なストリーム」を用意する
   const stream = new ReadableStream({
     async start(controller) {
-      // 1件の進捗イベントを SSE 形式（"data: 〜\n\n"）で送信する関数
+      let closed = false; // ストリームが閉じたかどうか（閉じた後は書き込まない）
+      // 1件の進捗イベントを SSE 形式（"data: 〜\n\n"）で送信する関数。
+      // ★閉じた/切断済みの相手へ書くと例外になるため、closed フラグと try/catch で保護する。
       const send = (ev: JobEvent) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
       try {
-        // ジョブを実行。進捗が出るたびに上の send が呼ばれて画面へ届く
-        await runSearchJob(id, send);
+        // ジョブを実行。req.signal でクライアント切断を runner に伝え、途中で中断できるようにする
+        await runSearchJob(id, send, req.signal);
       } catch (e) {
-        // 途中で失敗した場合は失敗イベントを送る
         send({ type: "failed", message: (e as Error).message, at: Date.now() });
       } finally {
-        // 最後に「終了」を知らせるイベントを送り、ストリームを閉じる
-        controller.enqueue(encoder.encode(`event: end\ndata: {}\n\n`));
-        controller.close();
+        // 最後に「終了」を知らせるイベントを送り、ストリームを閉じる（例外は握りつぶす）
+        if (!closed) {
+          try {
+            controller.enqueue(encoder.encode(`event: end\ndata: {}\n\n`));
+            controller.close();
+          } catch {
+            /* すでに閉じている場合は無視 */
+          }
+        }
       }
+    },
+    // クライアント切断時に呼ばれる。ここで以後の送信を止める。
+    cancel() {
+      /* runner は signal.aborted を見て自ら止まる */
     },
   });
 

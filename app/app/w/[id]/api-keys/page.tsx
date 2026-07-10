@@ -19,7 +19,14 @@ export default async function ApiKeysPage({
   // 存在しない・未ログイン・持ち主が違う場合は「見つかりません」を表示。
   if (!ws || !user || ws.ownerId !== user.id) notFound();
   const wallet = getWallet(ws.id); // クレジット残高（画面上部の表示に使う）。
-  const keys = listApiKeys(ws.id); // すでに発行済みのAPIキー一覧。
+  // ★クライアントへ渡すのは公開用の項目だけ（keyHash=鍵のハッシュは絶対に渡さない）
+  const keys = listApiKeys(ws.id).map((k) => ({
+    id: k.id,
+    name: k.name,
+    keyPreview: k.keyPreview,
+    createdAt: k.createdAt,
+    lastUsedAt: k.lastUsedAt,
+  }));
 
   return (
     <AppShell workspace={ws} balance={wallet?.balance ?? 0} active="/api-keys">

@@ -18,6 +18,10 @@ const buckets: Map<string, Bucket> = (g.__gtmRate ??= new Map());
 // 許可できたら true、上限超過なら false を返す。
 export function rateLimit(key: string, max: number, windowMs: number): boolean {
   const now = Date.now();
+  // ★メモリ肥大防止：キーが増えすぎたら、期限切れのバケツを一掃する。
+  if (buckets.size > 20000) {
+    for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k);
+  }
   const b = buckets.get(key);
   if (!b || now > b.resetAt) {
     buckets.set(key, { count: 1, resetAt: now + windowMs });

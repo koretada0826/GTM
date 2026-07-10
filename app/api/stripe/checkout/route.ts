@@ -16,15 +16,17 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // 本文から対象ワークスペースと希望プランを読み取る
-  const { workspaceId, plan } = (await req.json()) as { workspaceId: string; plan: Plan };
+  // 本文から対象ワークスペースと希望プランを読み取る（壊れたbodyは400）
+  const body = await req.json().catch(() => null);
+  if (!body) return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  const { workspaceId, plan } = body as { workspaceId: string; plan: Plan };
+  // ★プランはホワイトリスト検証（有料プランのみ許可。未知値でクラッシュさせない）
+  if (!["starter", "pro", "scale"].includes(plan))
+    return NextResponse.json({ error: "invalid plan" }, { status: 400 });
   // 所有者確認：そのワークスペースが本人のものかを確認する
   const ws = getWorkspace(workspaceId);
   if (!ws || ws.ownerId !== user.id)
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  // 無料プランや法人プランは、この決済フローの対象外なので弾く
-  if (plan === "free" || plan === "enterprise")
-    return NextResponse.json({ error: "invalid plan" }, { status: 400 });
 
   // 決済後に戻ってくる請求ページのURLを組み立てる
   const origin = new URL(req.url).origin;
@@ -59,9 +61,11 @@ export async function POST(req: Request) {
 
   // 開発環境のモック：プランを即時適用（Webビュー相当の処理をここで代替実行）。
   // ★冪等化：同じワークスペース×プラン×同じ月では二度と付与しない（連打による無限増殖を防止）。
+  // ★冪等キーは「ワークスペース×月」（プランを含めない）。
+  //   プランを往復（starter→pro→starter）してもその月は1回しか付与しない＝無限増殖を完全に防ぐ。
   const ym = new Date().toISOString().slice(0, 7); // 例: "2026-07"
   setWorkspacePlan(workspaceId, plan);
-  grantMonthlyCredits(workspaceId, plan, `mock:${workspaceId}:${plan}:${ym}`);
+  grantMonthlyCredits(workspaceId, plan, `mock:${workspaceId}:${ym}`);
   upsertSubscription(workspaceId, { plan, status: "active" });
   return NextResponse.json({ url: `${billingUrl}?checkout=mock`, mode: "mock" });
 }

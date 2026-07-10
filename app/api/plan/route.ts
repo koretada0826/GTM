@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { createPlan } from "@/lib/agent/planner";
-import { getWorkspace, addMessage, createSession } from "@/lib/data/store";
+import { getWorkspace, addMessage, createSession, getSession } from "@/lib/data/store";
 import { MARKET_DEFAULT } from "@/lib/config";
 
 /*
@@ -26,9 +26,18 @@ export async function POST(req: Request) {
   const ws = getWorkspace(workspaceId);
   if (!ws || ws.ownerId !== user.id)
     return NextResponse.json({ error: "workspace not found" }, { status: 404 });
-  // 入力チェック：指示文が空なら 400（リクエストが不正）を返す
+  // 入力チェック：指示文が空なら 400、長すぎ（2000文字超）も 400（巨大入力・コスト暴走対策）
   if (!prompt?.trim())
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
+  if (prompt.length > 2000)
+    return NextResponse.json({ error: "prompt too long" }, { status: 400 });
+
+  // ★sessionId 指定時は、そのセッションが本人のワークスペースのものかを検証（他人の会話への書き込み防止）
+  if (sessionId) {
+    const s = getSession(sessionId);
+    if (!s || s.workspaceId !== workspaceId)
+      return NextResponse.json({ error: "invalid session" }, { status: 400 });
+  }
 
   // セッションIDが無い＝新しい会話。指示文の先頭40文字をタイトルにして新規セッションを作る
   if (!sessionId) {

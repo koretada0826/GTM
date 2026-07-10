@@ -43,12 +43,21 @@ export function getFreshCandidates(signature: string): LeadCandidate[] | null {
   const entry = cache.get(signature);
   if (!entry) return null;
   const age = Date.now() - entry.fetchedAt;
-  if (age > TTL_MS) return null; // 寿命切れ → 古いので使わない
+  if (age > TTL_MS) {
+    cache.delete(signature); // ★寿命切れは削除（メモリ肥大防止）
+    return null;
+  }
   return entry.candidates;
 }
 
 // 取得した候補をキャッシュに保存する
 export function setCandidates(signature: string, candidates: LeadCandidate[]): void {
+  // ★メモリ肥大防止：エントリが増えすぎたら、期限切れを掃除する（それでも多ければ全消し）
+  if (cache.size > 5000) {
+    const now = Date.now();
+    for (const [k, v] of cache) if (now - v.fetchedAt > TTL_MS) cache.delete(k);
+    if (cache.size > 5000) cache.clear();
+  }
   cache.set(signature, { candidates, fetchedAt: Date.now() });
 }
 

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getSearchPlan, getWorkspace, getWallet } from "@/lib/data/store";
+import { getSearchPlan, getWorkspace, getWallet, countActiveJobs } from "@/lib/data/store";
 import { createJob } from "@/lib/agent/runner";
+import { PLAN_INFO } from "@/lib/domain/types";
+import { rateLimit } from "@/lib/ratelimit";
 
 /*
  * このAPI（POST /api/jobs）は、作成済みの「検索プラン」から実際の「ジョブ（実行タスク）」を作る窓口です。
@@ -24,6 +26,16 @@ export async function POST(req: Request) {
   const ws = getWorkspace(plan.workspaceId);
   if (!ws || ws.ownerId !== user.id)
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  // レート制限：ワークスペース単位で1分あたり30回まで（ジョブ乱発によるコスト暴走を防ぐ）
+  if (!rateLimit(`jobs:${plan.workspaceId}`, 30, 60_000)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
+
+  // 同時実行の上限：プランごとの concurrency を超えていたら 429（並列での残高マイナス/原価暴走を防ぐ）
+  if (countActiveJobs(plan.workspaceId) >= PLAN_INFO[ws.plan].concurrency) {
+    return NextResponse.json({ error: "too_many_running_jobs" }, { status: 429 });
+  }
 
   // クレジット残高チェック：ウォレットが無い or 残高0以下なら 402（支払いが必要）
   // ★以前は「wallet && …」でウォレット未存在時にチェックをすり抜けていた。「!wallet ||」に修正。

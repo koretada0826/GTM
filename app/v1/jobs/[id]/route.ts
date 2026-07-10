@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bearerFrom, resolveApiKey } from "@/lib/auth/apikey";
 import { getJob, listLeadsByJob } from "@/lib/data/store";
+import { rateLimit } from "@/lib/ratelimit";
 
 /*
  * このAPI（GET /v1/jobs/{id}）は、外部プログラム向けに公開された「ジョブ結果の取得」窓口です。
@@ -17,6 +18,10 @@ export async function GET(
   // 認証：BearerトークンからAPIキーを解決。無効なら 401（認証が必要）
   const key = resolveApiKey(bearerFrom(req));
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  // レート制限：1つのAPIキーで1分あたり60回まで（列挙・スクレイピング抑止）
+  if (!rateLimit(`v1jobs:${key.id}`, 60, 60_000)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
   // URL内のジョブIDを取り出す
   const { id } = await params;
   // 所有者確認：ジョブが存在し、かつAPIキーと同じワークスペースのものかを確認する
