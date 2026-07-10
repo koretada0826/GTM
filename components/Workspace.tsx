@@ -254,7 +254,11 @@ export function Workspace({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                // Enter キー（Shift無し）で送信、Shift+Enter は改行にする
+                // ★日本語入力（IME）で変換を確定するための Enter は送信に使わない。
+                //   isComposing = ローマ字→かな漢字の「変換中」フラグ。keyCode 229 も変換中を表す保険。
+                //   これを見ないと「で」などの変換確定 Enter で途中送信されてしまう（不具合の原因）。
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                // Enter キー（Shift無し・かつ変換中でない）で送信、Shift+Enter は改行にする
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   submitPrompt(input);

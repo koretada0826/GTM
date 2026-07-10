@@ -34,8 +34,8 @@ export function AppShell({
   return (
     // 画面全体を横並び（左メニュー＋右本体）にする一番外側の枠。高さは画面いっぱい。
     <div className="flex h-screen overflow-hidden bg-cream">
-      {/* left rail（左端の縦メニュー） */}
-      <aside className="flex w-14 flex-col items-center gap-1 border-r border-line bg-cream-100/60 py-3">
+      {/* left rail（左端の縦メニュー）。アイコンの下に文字ラベルを出すため少し幅を広げている */}
+      <aside className="flex w-20 flex-col items-center gap-1 border-r border-line bg-cream-100/60 py-3">
         {/* 一番上のロゴマーク。クリックするとアプリのトップへ戻る */}
         <div className="mb-2">
           <Link href="/app" className="inline-flex h-8 w-8 items-center justify-center">
@@ -59,7 +59,8 @@ export function AppShell({
               href={base + r.href} // 飛び先URL（共通の先頭＋各項目のパス）。
               title={r.label} // マウスを乗せたときに出る説明文。
               // 今開いている画面なら白く目立たせ、そうでなければ控えめ色にする。
-              className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+              // アイコンと文字ラベルを縦並び（flex-col）にして、何のボタンか一目で分かるようにする。
+              className={`flex h-14 w-16 flex-col items-center justify-center gap-1 rounded-xl transition-colors ${
                 isActive ? "bg-paper text-ink shadow-sm" : "text-muted hover:bg-paper/60 hover:text-ink"
               }`}
             >
@@ -67,6 +68,8 @@ export function AppShell({
               <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
                 <path d={r.icon} />
               </svg>
+              {/* アイコンの下に表示する日本語ラベル（検索／リスト／API／課金） */}
+              <span className="text-[10px] leading-none">{r.label}</span>
             </Link>
           );
         })}
@@ -74,11 +77,13 @@ export function AppShell({
         <form action={logoutAction} className="mt-auto">
           <button
             title="ログアウト"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted hover:bg-paper/60 hover:text-ink"
+            className="flex h-14 w-16 flex-col items-center justify-center gap-1 rounded-xl text-muted hover:bg-paper/60 hover:text-ink"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
               <path d="M10 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7v-2h7V5h-7V3Zm-.6 5L6 11.4H14v1.2H6L9.4 16 8 17.4 2.6 12 8 6.6 9.4 8Z" />
             </svg>
+            {/* アイコンの下に表示する日本語ラベル */}
+            <span className="text-[10px] leading-none">ログアウト</span>
           </button>
         </form>
       </aside>
