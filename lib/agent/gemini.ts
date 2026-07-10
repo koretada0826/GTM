@@ -12,7 +12,7 @@
 import type { Market, StructuredICP } from "@/lib/domain/types";
 
 // Gemini のモデル名（環境変数で上書き可。既定は無料枠で使える高速モデル）。
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 // Gemini の問い合わせ先URLを組み立てる（key＝APIキー＝利用許可の鍵）。
 function endpoint(key: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
