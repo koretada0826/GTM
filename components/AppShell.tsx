@@ -32,10 +32,10 @@ export function AppShell({
 }) {
   const base = `/app/w/${workspace.id}`; // 各リンクの共通の先頭部分（このワークスペース用のURL）
   return (
-    // 画面全体を横並び（左メニュー＋右本体）にする一番外側の枠。高さは画面いっぱい。
-    <div className="flex h-screen overflow-hidden bg-cream">
-      {/* left rail（左端の縦メニュー）。アイコンの下に文字ラベルを出すため少し幅を広げている */}
-      <aside className="flex w-20 flex-col items-center gap-1 border-r border-line bg-cream-100/60 py-3">
+    // 一番外側の枠。スマホ＝縦積み(flex-col)、PC(md以上)＝左メニュー＋右本体の横並び(flex-row)。高さは画面いっぱい。
+    <div className="flex h-screen flex-col overflow-hidden bg-cream md:flex-row">
+      {/* left rail（左端の縦メニュー）。スマホでは隠し、PC(md以上)でだけ表示する。代わりにスマホは下部タブバー。 */}
+      <aside className="hidden w-20 flex-col items-center gap-1 border-r border-line bg-cream-100/60 py-3 md:flex">
         {/* 一番上のロゴマーク。クリックするとアプリのトップへ戻る */}
         <div className="mb-2">
           <Link href="/app" className="inline-flex h-8 w-8 items-center justify-center">
@@ -89,35 +89,67 @@ export function AppShell({
       </aside>
 
       {/* main（メニューの右側。上部ヘッダーとページ本体） */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* 上部ヘッダー: 左にロゴとワークスペース名、右にクレジット残高を表示 */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-cream/80 px-5 backdrop-blur">
+        {/* スマホは余白・文字を詰めて崩れないようにする（gap-2 / px-3、狭い画面では一部を隠す）*/}
+        <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line bg-cream/80 px-3 backdrop-blur sm:px-5">
           {/* ヘッダー左側：ロゴ → 区切りの「/」→ ワークスペース名 → 市場ラベル */}
           {/* ロゴをクリックすると公開トップページ("/")へ戻れる（宣伝ページ・料金などを見に行ける） */}
-          <div className="flex items-center gap-3">
+          {/* min-w-0＝縮小を許可（長い名前でヘッダーが崩れないように）。名前と区切りは狭い画面では隠す。*/}
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <Logo href="/" />
-            <span className="text-muted">/</span>
-            <span className="text-sm text-ink">{workspace.name}</span>
-            {/* この作業スペースの対象市場を示す小さな丸バッジ */}
-            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
+            <span className="hidden text-muted sm:inline">/</span>
+            {/* ワークスペース名：長い場合は…で省略。狭い画面(sm未満)では非表示にして崩れを防ぐ */}
+            <span className="hidden truncate text-sm text-ink sm:inline">{workspace.name}</span>
+            {/* この作業スペースの対象市場を示す小さな丸バッジ（常に表示・縮まない） */}
+            <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
               {workspace.market}
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            {/* クレジット残高の表示。クリックすると課金ページへ移動する。toLocaleString() で3桁ごとにカンマ区切り */}
-            <Link
-              href={base + "/billing"}
-              className="flex items-center gap-1.5 rounded-full border border-line-strong bg-paper px-3 py-1.5 text-sm"
-            >
-              <span className="h-2 w-2 rounded-full bg-brand" />
-              <span className="tabular-nums font-medium text-ink">{balance.toLocaleString()}</span>
-              <span className="text-muted">クレジット</span>
-            </Link>
-          </div>
+          {/* クレジット残高の表示。クリックすると課金ページへ移動する。狭い画面では「クレジット」の文字を省く */}
+          <Link
+            href={base + "/billing"}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-line-strong bg-paper px-3 py-1.5 text-sm"
+          >
+            <span className="h-2 w-2 rounded-full bg-brand" />
+            <span className="tabular-nums font-medium text-ink">{balance.toLocaleString()}</span>
+            <span className="hidden text-muted sm:inline">クレジット</span>
+          </Link>
         </header>
         {/* ページ本体。ここに各画面の中身（children）がはめ込まれて表示される */}
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
+
+      {/* mobile bottom nav（スマホ専用の下部タブバー）。PC(md以上)では隠す。 */}
+      {/* 左の縦メニューの代わり。画面下に横並びのタブとして検索/リスト/API/課金/ログアウトを置く。 */}
+      <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-cream-100/90 backdrop-blur md:hidden">
+        {RAIL.map((r) => {
+          const isActive = active === (r.href || "search"); // 今開いている画面かどうか
+          return (
+            <Link
+              key={r.label}
+              href={base + r.href}
+              className={`flex flex-1 flex-col items-center justify-center gap-0.5 py-2 transition-colors ${
+                isActive ? "text-brand" : "text-muted"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <path d={r.icon} />
+              </svg>
+              <span className="text-[10px] leading-none">{r.label}</span>
+            </Link>
+          );
+        })}
+        {/* ログアウトも下部タブの1つとして配置 */}
+        <form action={logoutAction} className="flex flex-1">
+          <button className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-muted">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+              <path d="M10 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7v-2h7V5h-7V3Zm-.6 5L6 11.4H14v1.2H6L9.4 16 8 17.4 2.6 12 8 6.6 9.4 8Z" />
+            </svg>
+            <span className="text-[10px] leading-none">ログアウト</span>
+          </button>
+        </form>
+      </nav>
     </div>
   );
 }
