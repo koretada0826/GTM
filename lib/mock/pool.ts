@@ -95,6 +95,17 @@ function buyingSignalFor(icp: StructuredICP, rng: () => number): string {
   return `${s}${pick(rng, extra)}`; // シグナル＋補足を組み合わせて返す
 }
 
+// 所在地を決める。検索で具体的な地域が指定されていれば、その地域の企業を返す。
+// ★以前は地域を無視して全国の都市からランダムに選んでいたため、「東京」で探しても
+//   仙台・福岡等が混ざっていた（クライアント指摘のイレギュラー）。ここで地域を反映する。
+function cityFor(icp: StructuredICP, jp: boolean, rng: () => number): string {
+  const loc = (icp.location || "").trim();
+  // 「日本全国」「全国」「United States」等の広域・未指定は、全国の都市からばらつかせる。
+  const generic = !loc || /全国|全域|全地域|^日本$|日本全国|nationwide|united states|global/i.test(loc);
+  if (jp && !generic) return loc; // 具体地域（東京・大阪・池袋など）ならその地域を所在地にする
+  return jp ? pick(rng, JP_CITY) : pick(rng, GLOBAL_CITY); // 広域・未指定は従来どおり全国から選ぶ
+}
+
 // 検索プランに対する“真の企業プール”を決定的に生成する。
 export function generateCompanyPool(icp: StructuredICP, planId: string, size: number): PoolCompany[] {
   const jp = icp.market === "JP"; // 日本市場かどうか
@@ -107,7 +118,7 @@ export function generateCompanyPool(icp: StructuredICP, planId: string, size: nu
       ? `${pick(rng, JP_PREFIX)}${pick(rng, JP_CORE)}${pick(rng, suffixPool)}`
       : `${pick(rng, GLOBAL_CORE)} ${pick(rng, suffixPool)}`;
     const domain = domainFrom(name, i + 1); // 会社名からドメインを作る
-    const city = jp ? pick(rng, JP_CITY) : pick(rng, GLOBAL_CITY); // 所在地を市場に応じて選ぶ
+    const city = cityFor(icp, jp, rng); // 所在地を決める（検索地域が具体的ならその地域にそろえる）
     const headcount = 5 + Math.floor(rng() * 480); // 従業員数を5〜484人の範囲でランダムに
     const base = 98 - Math.floor((i / Math.max(size, 1)) * 42); // 上位ほど高いスコアの土台（先頭が高く、後ろほど下がる）
     const fitScore = Math.max(52, Math.min(99, base + Math.floor(rng() * 6 - 3))); // 少しの揺らぎを足し、52〜99の範囲に収める
